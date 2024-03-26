@@ -1,6 +1,6 @@
 cd C:\Users\Asus\Documents\GitHub\evacuationwall
-
+git init
+git add *
 git commit -am "automatic commit"
-#add a message if necessary
-#add file is necessary
+
 git push --force -u https://github.com/MarcoOffidani/evacuationwall.git
