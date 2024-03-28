@@ -25,6 +25,6 @@ NOW = datetime.now().strftime(f"%d-%b-%H-%M-%S")
 SAVE_PATH_TBLOGS = 'saved_data/tb-logs'
 SAVE_PATH_MODELS = 'saved_data/models'
 
-DEVICE = "cpu"
+DEVICE = "cuda"
 
-WALK_DIAGRAM_LOGGING_FREQUENCY = 500   # frequency in episodes  (overall_timesteps: 2_000_000)
+WALK_DIAGRAM_LOGGING_FREQUENCY = 50   # frequency in episodes  (overall_timesteps: 2_000_000)

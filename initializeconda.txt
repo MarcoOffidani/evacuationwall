@@ -1,0 +1,5 @@
+C:\ProgramData\anaconda3\Scripts\activate.bat C:\ProgramData\anaconda3
+
+conda activate rlgpu
+
+cd C:\Users\Asus\Documents\GitHub\evacuationwall

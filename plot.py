@@ -69,6 +69,9 @@ def parse_args():
     gravity_embedding_params.add_argument('-e', '--enabled-gravity-embedding', type=bool, 
         default=constants.ENABLED_GRAVITY_EMBEDDING,
         help='if True use gravity embedding')
+    gravity_embedding_params.add_argument('-speed', '--enabled-gravity-embedding-speed', type=str2bool,
+        default=constants.ENABLED_GRAVITY_AND_SPEED_EMBEDDING,
+        help='if True use speed gravity embedding')
     gravity_embedding_params.add_argument('--alpha', type=float, default=constants.ALPHA,
         help='alpha parameter of gravity gradient embedding')
     
