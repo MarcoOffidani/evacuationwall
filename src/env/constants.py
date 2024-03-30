@@ -2,9 +2,9 @@
 # Note: params with (!) in comment are only default params, which
 # can be changed with argparse module in main.py
 
-NUM_PEDESTRIANS = 10                        # ! number of pedestrians
+NUM_PEDESTRIANS = 50                        # ! number of pedestrians
 EPS = 1e-8 
-ENSLAVING_DEGREE = 1.                       # ! leader's enslaving degree
+ENSLAVING_DEGREE = 0.01                       # ! leader's enslaving degree
 
 # Area params
 WIDTH = 1.                                  # ! geometry of environment space: width
@@ -41,3 +41,9 @@ SWITCH_DISTANCE_TO_ESCAPE = 0.01
 SAVE_PATH_GIFF = 'saved_data/giff'
 SAVE_PATH_PNG  = 'saved_data/png'
 SAVE_PATH_LOGS = 'saved_data/logs'
+
+WALL_HOLE_HALF_WIDTH = 0.5                    # put 1 in order to remove the wall
+WALLS = [((-1 + WALL_HOLE_HALF_WIDTH, 0), (1 - WALL_HOLE_HALF_WIDTH, 0))]
+
+VERTICAL_WALL_POSITION = 0.0  # Horizontal position of the vertical wall
+VERTICAL_WALL_HALF_WIDTH = 0.5  # Half-width of the vertical wall opening, put 0.5 in order to remove the wall
