@@ -1,6 +1,6 @@
 cd C:\Users\Asus\Documents\GitHub\evacuationwall
 git init
 git add *
-git commit -am "migrated pedestrian wall bump"
+git commit -am "migrated agent wall bump"
 
 git push --force -u https://github.com/MarcoOffidani/evacuationwall.git

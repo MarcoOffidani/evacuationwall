@@ -148,6 +148,10 @@ def update_statuses(statuses, pedestrian_positions, agent_position, exit_positio
     following = is_distance_low(
         pedestrian_positions, agent_position, SwitchDistances.to_leader)
     new_statuses[following] = Status.FOLLOWER
+    '''agent_position_array = agent_position[np.newaxis, :] #check why does not work
+    following = np.logical_and(is_distance_low(
+        pedestrian_positions, agent_position, SwitchDistances.to_leader) , check_if_same_room(pedestrian_positions, agent_position_array))
+    new_statuses[following] = Status.FOLLOWER'''
     
     exiting = is_distance_low(
         pedestrian_positions, exit_position, SwitchDistances.to_exit)
@@ -331,7 +335,7 @@ def grad_time_derivative_exit(
 from numpy.linalg import solve, LinAlgError
 import numpy as np
 
-def do_intersect(p1, q1, p2, q2):
+'''def do_intersect(p1, q1, p2, q2):
     # Convert points to linear equations of the form Ax + By = C
     A1, B1 = q1[1] - p1[1], p1[0] - q1[0]  # A = y2 - y1, B = x1 - x2 for line 1
     C1 = A1 * p1[0] + B1 * p1[1]
@@ -355,7 +359,82 @@ def do_intersect(p1, q1, p2, q2):
             return False  # Segments do not intersect
     except LinAlgError:
         # The lines are parallel or coincident (no single intersection point)
+        return False'''
+def calculate_slope_and_intercept(p1, p2):
+    """Calculate slope and y-intercept of the line through points p1 and p2."""
+    if p1[0] == p2[0]:  # Vertical line
+        return None, p1[0]  # Return None for slope and x-coordinate for y-intercept
+    else:
+        slope = (p2[1] - p1[1]) / (p2[0] - p1[0])
+        intercept = p1[1] - slope * p1[0]
+        return slope, intercept
+def calculate_slope_and_intercept_parallel(agent, pedestrians_positions):
+    #new_array = np[dim(pedestrian_position)]
+    condition_array = agent[0] == pedestrians_positions.T[0]
+    
+    slope_v = None
+    slope_nv = (pedestrians_positions.T[1] - agent[1]) / (pedestrians_positions.T[0] - agent[0])
+
+    intercept_v = p1[0]
+    intercept_nv = pedestrians_positions.T[1] - slope_nv * p1[0]
+    return np.where(condition_array, slope_v, slope_nv ) , np.where(condition_array, intercept_v, intercept_nv)
+def do_intersect(p1, q1, p2, q2):
+    m1, b1 = calculate_slope_and_intercept(p1, q1)
+    m2, b2 = calculate_slope_and_intercept(p2, q2)
+    if m1 == m2:
         return False
+    if m1 is None:
+        x = b1
+        y = m2 * x + b2
+    elif m2 is None:
+        x = b2
+        y = m1 * x + b1
+    else:
+        x = (b2 - b1) / (m1 - m2)
+        y = m1 * x + b1
+    return min(p1[0], q1[0]) <= x <= max(p1[0], q1[0]) and \
+           min(p2[0], q2[0]) <= x <= max(p2[0], q2[0]) and \
+           min(p1[1], q1[1]) <= y <= max(p1[1], q1[1]) and \
+           min(p2[1], q2[1]) <= y <= max(p2[1], q2[1])
+
+def do_intersect_parallel(p1, q1, p2, q2):
+    # Ensure all inputs are numpy arrays for efficient calculations
+    p1, q1 = np.array(p1), np.array(q1)
+    p2, q2 = np.array(p2), np.array(q2)
+    
+    # Calculate slopes and intercepts for all lines
+    m1, b1 = calculate_slope_and_intercept_parallel(p1, q1)
+    m2, b2 = calculate_slope_and_intercept_parallel(p2, q2)
+
+    # Handle parallel lines (including vertical lines where slope is None)
+    parallel = np.isclose(m1, m2)
+    vertical1 = np.isnan(m1)
+    vertical2 = np.isnan(m2)
+    
+    # Calculate intersection points
+    x_intercept = np.zeros(p2.shape[0])
+    y_intercept = np.zeros(p2.shape[0])
+    
+    # Calculate intersection for non-vertical lines
+    not_vertical = ~vertical1 & ~vertical2
+    x_intercept[not_vertical] = (b2[not_vertical] - b1) / (m1 - m2[not_vertical])
+    y_intercept[not_vertical] = m1 * x_intercept[not_vertical] + b1
+
+    # Handle cases where one of the lines is vertical
+    x_intercept[vertical1] = p1[0]
+    y_intercept[vertical1] = m2[vertical1] * p1[0] + b2[vertical1]
+    x_intercept[vertical2] = p2[vertical2, 0]
+    y_intercept[vertical2] = m1 * p2[vertical2, 0] + b1
+
+    # Check if intersection points are within segment bounds
+    within_p1_q1 = (np.minimum(p1[0], q1[0]) <= x_intercept) & (x_intercept <= np.maximum(p1[0], q1[0])) & \
+                   (np.minimum(p1[1], q1[1]) <= y_intercept) & (y_intercept <= np.maximum(p1[1], q1[1]))
+    within_p2_q2 = (np.minimum(p2[:, 0], q2[:, 0]) <= x_intercept) & (x_intercept <= np.maximum(p2[:, 0], q2[:, 0])) & \
+                   (np.minimum(p2[:, 1], q2[:, 1]) <= y_intercept) & (y_intercept <= np.maximum(p2[:, 1], q2[:, 1]))
+
+    intersects = (~parallel) & within_p1_q1 & within_p2_q2
+    
+    return intersects
 def calculate_detour(agent_pos, pedestrian_pos, wall):
     # Calculate distances for detours via wall[0] and wall[1]
     detour_via_wall0 = np.linalg.norm(agent_pos - wall[0]) + np.linalg.norm(wall[0] - pedestrian_pos)
@@ -406,7 +485,6 @@ def check_vertical_bumping(positions, old_pos, num_openings, opening_positions):
             np.abs(positions[:, 1] - opening_position) > constants.VERTICAL_WALL_HALF_WIDTH
             #np.abs(positions[:, 1] - opening_position) > constants.VERTICAL_WALL_HALF_WIDTH* (1 - (action[[-1]] + 1))/2   
         )
-
     return to_bump_mask
 def check_if_same_room(a, b, walls=constants.WALLS):
     m, n = len(a), len(b)
@@ -422,6 +500,39 @@ def check_if_same_room(a, b, walls=constants.WALLS):
                             mask[i, j] = False
                 break  # No need to check other walls if one intersection is found            
     return mask  
+def check_if_same_room_parallel(a, b, walls):
+    # Ensure all inputs are numpy arrays
+    a = np.array(a)
+    b = np.array(b)
+    walls_start, walls_end = np.transpose(walls, (1, 0, 2))[0], np.transpose(walls, (1, 0, 2))[1]
+
+    # Prepare to broadcast a and b points against all walls
+    a_expanded = np.expand_dims(a, 1)
+    b_expanded = np.expand_dims(b, 1)
+
+    # Initialize the mask with True values
+    m, n = len(a), len(b)
+    mask = np.ones((m, n, len(walls)), dtype=bool)
+
+    # Calculate intersections for each pair of points in a and b against each wall
+    for wall_index, (wall_start, wall_end) in enumerate(zip(walls_start, walls_end)):
+        # Use broadcasting to compare each point in a and b against the current wall
+        # Note: do_intersect_parallel now needs to accept and efficiently handle broadcasting across walls
+        intersects = do_intersect_parallel(
+            a_expanded.repeat(len(walls), axis=1),
+            b_expanded.repeat(len(walls), axis=1),
+            np.array([wall_start] * m).repeat(n, axis=0),
+            np.array([wall_end] * m).repeat(n, axis=0)
+        )
+
+        # Update mask based on intersections - if any intersection is found, set to False
+        mask[:, :, wall_index] = ~intersects.reshape(m, n)
+
+    # Determine if same room by ensuring no wall intersections
+    # Axis 2 aggregates across all walls - if True for any wall, it means no intersection with that wall
+    same_room = np.all(mask, axis=2)
+
+    return same_room
 class Area:
     def __init__(self, 
         reward: Reward,
@@ -564,15 +675,16 @@ class Area:
             pedestrians.positions[to_bump1_mask] = old_pos[to_bump1_mask]
             pedestrians.directions[to_bump1_mask, 1] = -pedestrians.directions[to_bump1_mask, 1]
         # vertical wall bumping HERE€
-        opening_positions = [ 0.5]
-        num_openings=len(opening_positions)
+        v_opening_positions = [ 0.5]
+        num_v_openings=len(v_opening_positions)
         #to_bump0_mask = np.logical_and(pedestrians.positions[:, 0] * old_pos[:, 0] < 0, old_pos[:, 1] > 0)
         #to_bump0_mask = check_vertical_bumping(pedestrians.positions, old_pos, len(opening_positions), opening_positions, self.doors)
-        to_bump0_mask = check_vertical_bumping(pedestrians.positions, old_pos, len(opening_positions), opening_positions)
+        to_bump0_mask = check_vertical_bumping(pedestrians.positions, old_pos, len(opening_positions), v_opening_positions)
 
         if any(to_bump0_mask):
             pedestrians.positions[to_bump0_mask] = old_pos[to_bump0_mask]
-            pedestrians.directions[to_bump0_mask, 0] = -pedestrians.directions[to_bump0_mask, 0]        
+            pedestrians.directions[to_bump0_mask, 0] = -pedestrians.directions[to_bump0_mask, 0]  
+            print('unexpected vertical bumping')      
         # Estimate pedestrians statues, reward & update statuses
         old_statuses = pedestrians.statuses.copy()
         new_pedestrians_statuses = update_statuses(
@@ -601,7 +713,7 @@ class Area:
 
         return pedestrians, termination, reward_pedestrians, intrinsic_reward
 
-    def agent_step(self, action : list, agent : Agent) -> Tuple[Agent, bool, float]:
+    '''def agent_step(self, action : list, agent : Agent) -> Tuple[Agent, bool, float]:
         """
         Perform agent step:
             1. Read & preprocess action
@@ -617,8 +729,56 @@ class Area:
             agent.position += agent.direction
             return agent, False, 0.
         else:
-            return agent, self.reward.is_termination_agent_wall_collision, -5.
-
+            return agent, self.reward.is_termination_agent_wall_collision, -5.'''
+    def agent_step(self, action : list, agent : Agent) -> Tuple[Agent, bool, float]:
+        """
+        Perform agent step:
+            1. Read & preprocess action
+            2. Check wall collision
+            3. Return (updated agent, termination, reward)
+        """
+        #m_action= action[[0,1]] #€
+        #d_action = [action[[2,3,4]]] #shit to remove doors
+        #print(type(m_action))
+        #print(m_action)
+        #d_action = np.array([-1,-1,-1]) #shit to remove doors
+        #print(type(d_action))
+        #print(d_action)
+        #self.doors = (d_action + 1)* constants.WALL_HOLE_HALF_WIDTH / 2 
+        #print(self.doors)
+        #print()
+        #agent.doors = self.doors
+        #m_action = np.array(m_action)
+        #m_action /= np.linalg.norm(m_action) + constants.EPS # np.clip(action, -1, 1, out=action)
+        action = np.array(action)
+        #action /= (np.linalg.norm(action) + constants.EPS) # np.clip(action, -1, 1, out=action)
+        #agent.direction = self.step_size * m_action #
+        agent.direction = self.step_size * action /(np.linalg.norm(action) + constants.EPS)
+        h_opening_positions = [-1, 1]
+        num_h_openings=len(h_opening_positions)
+        v_opening_positions = [ 0.5]
+        num_v_openings=len(v_opening_positions)
+        def agent_median_wall_bump(pos, dire): #HERE€
+            new_pos = pos + dire
+            #if ((new_pos[1] * pos[1]) < 0) and (abs(new_pos[0]) > constants.WALL_HOLE_HALF_WIDTH):
+                #return True
+            #if check_horizonthal_bumping(np.expand_dims(new_pos, axis=0), np.expand_dims(pos, axis=0), num_h_openings, h_opening_positions, self.doors):
+            if check_horizonthal_bumping(np.expand_dims(new_pos, axis=0), np.expand_dims(pos, axis=0), num_h_openings, h_opening_positions):
+                return True
+            #if check_vertical_bumping(np.expand_dims(new_pos, axis=0), np.expand_dims(pos, axis=0), num_v_openings, v_opening_positions, self.doors):
+            if check_vertical_bumping(np.expand_dims(new_pos, axis=0), np.expand_dims(pos, axis=0), num_v_openings, v_opening_positions):
+                print('vertical bumping')
+                return True
+        if agent_median_wall_bump(agent.position, agent.direction):
+            #agent.position -= agent.direction
+            return agent, self.reward.is_termination_agent_wall_collision, -500.
+        
+        if not self._if_wall_collision(agent):
+            agent.position += agent.direction
+            return agent, False, 0.
+        else:
+            #agent.position -= agent.direction
+            return agent, self.reward.is_termination_agent_wall_collision, -500.
     def estimate_mean_direction_among_neighbours(self,
             intersection,           # [f+v, f+v+e]  boolean matrix
             efv_directions,        # [f+v+e, 2]    vectors of directions of pedestrians
