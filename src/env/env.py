@@ -145,13 +145,13 @@ def update_statuses(statuses, pedestrian_positions, agent_position, exit_positio
     """Measure statuses of all pedestrians based on their position"""
     new_statuses = statuses.copy()
 
-    following = is_distance_low(
+    '''following = is_distance_low(
         pedestrian_positions, agent_position, SwitchDistances.to_leader)
-    new_statuses[following] = Status.FOLLOWER
-    '''agent_position_array = agent_position[np.newaxis, :] #check why does not work
-    following = np.logical_and(is_distance_low(
-        pedestrian_positions, agent_position, SwitchDistances.to_leader) , check_if_same_room(pedestrian_positions, agent_position_array))
     new_statuses[following] = Status.FOLLOWER'''
+    agent_position_array = agent_position[np.newaxis, :] #check why does not work
+    following = np.logical_and(is_distance_low(
+        pedestrian_positions, agent_position, SwitchDistances.to_leader) , check_if_same_room_parallel( agent_position_array,pedestrian_positions))
+    new_statuses[following] = Status.FOLLOWER
     
     exiting = is_distance_low(
         pedestrian_positions, exit_position, SwitchDistances.to_exit)
@@ -368,19 +368,88 @@ def calculate_slope_and_intercept(p1, p2):
         slope = (p2[1] - p1[1]) / (p2[0] - p1[0])
         intercept = p1[1] - slope * p1[0]
         return slope, intercept
-def calculate_slope_and_intercept_parallel(agent, pedestrians_positions):
+'''def calculate_slope_and_intercept_parallel(agent, pedestrians_positions):
     #new_array = np[dim(pedestrian_position)]
+
     condition_array = agent[0] == pedestrians_positions.T[0]
     
     slope_v = None
     slope_nv = (pedestrians_positions.T[1] - agent[1]) / (pedestrians_positions.T[0] - agent[0])
 
-    intercept_v = p1[0]
-    intercept_nv = pedestrians_positions.T[1] - slope_nv * p1[0]
+    intercept_v = agent[0]
+    intercept_nv = pedestrians_positions.T[1] - slope_nv * agent[0]
     return np.where(condition_array, slope_v, slope_nv ) , np.where(condition_array, intercept_v, intercept_nv)
-def do_intersect(p1, q1, p2, q2):
-    m1, b1 = calculate_slope_and_intercept(p1, q1)
-    m2, b2 = calculate_slope_and_intercept(p2, q2)
+import numpy as np'''
+
+'''def calculate_slope_and_intercept_parallel(wall, pedestrians_positions):
+    # Ensure wall and pedestrians_positions are numpy arrays for vectorized operations
+
+    
+    # Transpose is not needed if we work with shapes consistently
+    print(f"Wall shape: {wall.shape}")  # Debug print
+    print(f"Pedestrians_positions shape: {pedestrians_positions.shape}")  # Debug print
+
+    # Compare x-coordinates to find vertical lines (condition for vertical lines)
+    condition_array = wall[:,0] == pedestrians_positions[:, 0]
+    condition_array_exp=np.expand_dims(condition_array, axis=1)
+    print(f"Condition_array_exp shape: {condition_array_exp.shape}")  # Debug print
+    
+    # Calculate slopes for non-vertical lines
+    # Avoid division by zero by using condition_array to mask vertical lines
+    slope_nv = np.where(condition_array_exp, np.nan, (pedestrians_positions[:, 1] - wall[:,1]) / (pedestrians_positions[:, 0] - wall[:,0]))
+    
+    # Calculate intercepts for non-vertical lines
+    # y = mx + b -> b = y - mx; use wall[0] (x) and wall[1] (y) for the calculation
+    intercept_nv = np.where(condition_array_exp, wall[:,0], pedestrians_positions[:, 1] - slope_nv * pedestrians_positions[:, 0])
+
+    print(f"Slope_nv shape: {slope_nv.shape}")  # Debug print
+    print(f"Intercept_nv shape: {intercept_nv.shape}")  # Debug print
+    
+    # No need for separate np.where calls as the conditions are applied directly in the calculations
+    return slope_nv, intercept_nv'''
+
+
+
+'''def calculate_slope_and_intercept_parallel(wall, pedestrians_positions):
+    # Assumes wall and pedestrians_positions are already numpy arrays
+    print(f"wall shape: {wall.shape}")
+    print(f"pedestrians_positions shape: {pedestrians_positions.shape}")    
+    # Condition to identify vertical lines
+    condition_array = wall[:, 0] == pedestrians_positions[:, 0]
+    print(f"condition_array shape: {condition_array.shape}")
+    # Calculate slopes; handle division by zero by replacing with np.nan or using np.inf
+    delta_x = pedestrians_positions[:, 0] - wall[:, 0]
+    delta_y = pedestrians_positions[:, 1] - wall[:, 1]
+    slope_nv = np.where(condition_array, np.nan, delta_y / delta_x)
+    
+    # Calculate intercepts for non-vertical lines
+    intercept_nv = np.where(condition_array, np.nan, wall[:, 1] - slope_nv * wall[:, 0])
+
+    return slope_nv, intercept_nv'''
+def calculate_slope_and_intercept_parallel(wall, pedestrians_positions):
+    # Expanding the dimensions of wall and pedestrian positions for broadcasting
+    # wall shape becomes (1, 47, 2) and pedestrian_positions shape becomes (50, 1, 2)
+    wall_expanded = np.expand_dims(wall, axis=0)
+    pedestrians_expanded = np.expand_dims(pedestrians_positions, axis=1)
+    
+    # Compare x-coordinates to find vertical lines
+    # This will create a broadcasted comparison matrix of shape (50, 47)
+    condition_array = wall_expanded[:, :, 0] == pedestrians_expanded[:, :, 0]
+    print(f"condition_array shape: {condition_array.shape}")
+    # Calculate slopes for non-vertical lines
+    # Use broadcasting rules for subtraction and division
+    delta_x = pedestrians_expanded[:, :, 0] - wall_expanded[:, :, 0]
+    delta_y = pedestrians_expanded[:, :, 1] - wall_expanded[:, :, 1]
+    slope_nv = np.where(condition_array, np.nan, delta_y / delta_x)
+    print(f"slope_nv shpae: {slope_nv.shape}")
+    # Calculate intercepts for non-vertical lines using the formula: b = y - mx
+    intercept_nv = np.where(condition_array, np.nan, wall_expanded[:, :, 1] - slope_nv * wall_expanded[:, :, 0])
+    print(f"intercept_nv shpae: {intercept_nv.shape}")
+    return slope_nv, intercept_nv
+
+def do_intersect(w1, w2, p1, p2):
+    m1, b1 = calculate_slope_and_intercept(w1, w2)
+    m2, b2 = calculate_slope_and_intercept(p1, p2)
     if m1 == m2:
         return False
     if m1 is None:
@@ -392,49 +461,212 @@ def do_intersect(p1, q1, p2, q2):
     else:
         x = (b2 - b1) / (m1 - m2)
         y = m1 * x + b1
-    return min(p1[0], q1[0]) <= x <= max(p1[0], q1[0]) and \
-           min(p2[0], q2[0]) <= x <= max(p2[0], q2[0]) and \
-           min(p1[1], q1[1]) <= y <= max(p1[1], q1[1]) and \
-           min(p2[1], q2[1]) <= y <= max(p2[1], q2[1])
+    return min(w1[0], w2[0]) <= x <= max(w1[0], w2[0]) and \
+           min(p1[0], p2[0]) <= x <= max(p1[0], p2[0]) and \
+           min(w1[1], w2[1]) <= y <= max(w1[1], w2[1]) and \
+           min(p1[1], p2[1]) <= y <= max(p1[1], p2[1])
 
-def do_intersect_parallel(p1, q1, p2, q2):
-    # Ensure all inputs are numpy arrays for efficient calculations
-    p1, q1 = np.array(p1), np.array(q1)
-    p2, q2 = np.array(p2), np.array(q2)
+
+'''def do_intersect_parallel(w1, w2, p1, p2):
+    # Convert inputs to numpy arrays for efficient calculations
+    w1, w2 = np.array([w1]), np.array([w2])
+    p1, p2 = np.array(p1), np.array(p2)
     
-    # Calculate slopes and intercepts for all lines
-    m1, b1 = calculate_slope_and_intercept_parallel(p1, q1)
-    m2, b2 = calculate_slope_and_intercept_parallel(p2, q2)
+    # Print shapes of the inputs for verification
+    print(f"Shapes before calculation: w1={w1.shape}, w2={w2.shape}, p1={p1.shape}, p2={p2.shape}")
 
-    # Handle parallel lines (including vertical lines where slope is None)
+    # Calculate slopes and intercepts for all lines
+    #m1, b1 = calculate_slope_and_intercept_parallel(w1, w2)
+    m1, b1 = calculate_slope_and_intercept_parallel(w1, w2)
+    m2, b2 = calculate_slope_and_intercept_parallel(p1, p2)
+
+    # Print slopes and intercepts to check their shapes and values
+    #print(f"m1: {m1}, b1: {b1}")
+    #print(f"m2: {m2}, b2: {b2}")
+    print(f"Shapes after calculation: m1={np.shape(m1)}, b1={np.shape(b1)}, m2={np.shape(m2)}, b2={np.shape(b2)}")
+    m1_expanded = m1[:, np.newaxis]  # Shape becomes (m1, 1)
+    b1_expanded = b1[:, np.newaxis]  # Shape becomes (b1, 1)
+    # Check for parallel and vertical lines
     parallel = np.isclose(m1, m2)
     vertical1 = np.isnan(m1)
     vertical2 = np.isnan(m2)
-    
-    # Calculate intersection points
-    x_intercept = np.zeros(p2.shape[0])
-    y_intercept = np.zeros(p2.shape[0])
-    
+
+    # Print information about line orientation
+    #print(f"Parallel: {parallel}, Vertical1: {vertical1}, Vertical2: {vertical2}")
+
+    # Prepare to calculate intersection points
+    x_intercept = np.zeros((p1.shape[0],p2.shape[0]))
+    y_intercept = np.zeros((p1.shape[0],p2.shape[0]))
+    print(f"Shapes of intercept after declarations: x_intercept={np.shape(x_intercept)}, y_intercept={np.shape(y_intercept)}")
     # Calculate intersection for non-vertical lines
-    not_vertical = ~vertical1 & ~vertical2
-    x_intercept[not_vertical] = (b2[not_vertical] - b1) / (m1 - m2[not_vertical])
-    y_intercept[not_vertical] = m1 * x_intercept[not_vertical] + b1
+    not_vertical = ~vertical1 & ~vertical2 
+    try:
+        x_intercept[not_vertical] = (b2[not_vertical] - b1_expanded) / (m1_expanded - m2[not_vertical])
+        y_intercept[not_vertical] = m1_expanded * x_intercept[not_vertical] + b1_expanded
+    except Exception as e:
+        print(f"Error in calculating non-vertical intersection: {e}")
+
+    # Print calculated intersection points
+    print(f"x_intercept: {x_intercept}, y_intercept: {y_intercept}")
 
     # Handle cases where one of the lines is vertical
-    x_intercept[vertical1] = p1[0]
-    y_intercept[vertical1] = m2[vertical1] * p1[0] + b2[vertical1]
-    x_intercept[vertical2] = p2[vertical2, 0]
-    y_intercept[vertical2] = m1 * p2[vertical2, 0] + b1
+    try:
+        x_intercept[vertical1] = w1[0]
+        y_intercept[vertical1] = m2[vertical1] * w1[0] + b2[vertical1]
+        x_intercept[vertical2] = p1[vertical2, 0]
+        y_intercept[vertical2] = m1 * p1[vertical2, 0] + b1
+    except Exception as e:
+        print(f"Error in handling vertical lines: {e}")
+    print(f"p1 shape: {w1.shape}, w2 shape: {p1.shape}, p1 shape: {p1.shape}, p2 shape: {p2.shape}")
+    print(f"vertical1: {vertical1}, vertical2: {vertical2}")
 
     # Check if intersection points are within segment bounds
-    within_p1_q1 = (np.minimum(p1[0], q1[0]) <= x_intercept) & (x_intercept <= np.maximum(p1[0], q1[0])) & \
-                   (np.minimum(p1[1], q1[1]) <= y_intercept) & (y_intercept <= np.maximum(p1[1], q1[1]))
-    within_p2_q2 = (np.minimum(p2[:, 0], q2[:, 0]) <= x_intercept) & (x_intercept <= np.maximum(p2[:, 0], q2[:, 0])) & \
-                   (np.minimum(p2[:, 1], q2[:, 1]) <= y_intercept) & (y_intercept <= np.maximum(p2[:, 1], q2[:, 1]))
-
-    intersects = (~parallel) & within_p1_q1 & within_p2_q2
+    within_w1_w2 = (np.minimum(w1[0], w2[0]) <= x_intercept) & (x_intercept <= np.maximum(w1[0], w2[0])) & \
+                   (np.minimum(w1[1], w2[1]) <= y_intercept) & (y_intercept <= np.maximum(w1[1], w2[1]))
+    within_p1_p2 = (np.minimum(p1[:, 0], p2[:, 0]) <= x_intercept) & (x_intercept <= np.maximum(p1[:, 0], p2[:, 0])) & \
+                   (np.minimum(p1[:, 1], p2[:, 1]) <= y_intercept) & (y_intercept <= np.maximum(p1[:, 1], p2[:, 1]))
+    print(f"within_w1_w2 shape: {within_w1_w2.shape}")
+    print(f"within_p1_p2 shape: {within_p1_p2.shape}")
+    print(f"parallel: {parallel.shape}")
+    intersects = (~parallel) & within_w1_w2 & within_p1_p2
     
-    return intersects
+    # Print final intersection results
+    print(f"Intersects shape: {intersects.shape}, Intersects: {intersects}")
+
+    return intersects'''
+
+'''def check_within_bounds(x_intercept, y_intercept, wall_start, wall_end, pedestrian_start, pedestrian_end):
+    # Expand the start and end points for walls and pedestrian paths for broadcasting
+    wall_x_min, wall_x_max = np.minimum(wall_start[:,0], wall_end[:,0]), np.maximum(wall_start[:,0], wall_end[:,0])
+    wall_y_min, wall_y_max = np.minimum(wall_start[:,1], wall_end[:,1]), np.maximum(wall_start[:,1], wall_end[:,1])
+    
+    ped_x_min, ped_x_max = np.minimum(pedestrian_start[:,0], pedestrian_end[:,0]), np.maximum(pedestrian_start[:,0], pedestrian_end[:,0])
+    ped_y_min, ped_y_max = np.minimum(pedestrian_start[:,1], pedestrian_end[:,1]), np.maximum(pedestrian_start[:,1], pedestrian_end[:,1])
+
+    # Check if the x and y intercepts are within the bounds for walls
+    within_wall_x = (x_intercept >= wall_x_min[:, np.newaxis]) & (x_intercept <= wall_x_max[:, np.newaxis])
+    within_wall_y = (y_intercept >= wall_y_min[:, np.newaxis]) & (y_intercept <= wall_y_max[:, np.newaxis])
+    
+    # Check if the x and y intercepts are within the bounds for pedestrian paths
+    within_ped_x = (x_intercept >= ped_x_min[np.newaxis, :]) & (x_intercept <= ped_x_max[np.newaxis, :])
+    within_ped_y = (y_intercept >= ped_y_min[np.newaxis, :]) & (y_intercept <= ped_y_max[np.newaxis, :])
+
+    # Intersection is valid if within both the x and y bounds of both a wall and a pedestrian path
+    valid_intersections = (within_wall_x & within_wall_y) & (within_ped_x & within_ped_y)
+
+    # Aggregate results to check if there is any valid intersection for each pedestrian path across any wall
+    intersects_any_wall = np.any(valid_intersections, axis=0)
+    print(f"intersects_any_wall shape:={intersects_any_wall.shape}")
+    return intersects_any_wall
+
+import numpy as np'''
+
+
+
+ 
+
+def do_intersect_parallel(w1, w2, p1, p2):
+    w1, w2 = np.array([w1]), np.array([w2])
+    p1, p2 = np.array(p1), np.array(p2)
+    # Assuming calculate_slope_and_intercept_parallel is already correctly implemented as per your description
+    # Calculate slopes and intercepts for wall (w1, w2) and pedestrians (p1, p2)
+    print(f"Shapes before calculation: w1={w1.shape}, w2={w2.shape}, p1={p1.shape}, p2={p2.shape}")
+    mw, bw = calculate_slope_and_intercept_parallel(w1, w2)
+    mp, bp = calculate_slope_and_intercept_parallel(p1, p2)
+    print(f"Shapes after calculation: mw={np.shape(mw)}, bw={np.shape(bw)}, mp={np.shape(mp)}, bp={np.shape(bp)}")    
+    # Identify vertical and parallel lines
+    # Preparing for broadcasting - shapes: (n_walls, n_p1, n_p2)
+    mw_expanded = mw[:, np.newaxis, np.newaxis]
+    bw_expanded = bw[:, np.newaxis, np.newaxis]
+    # Broadcasting setup
+    # Create grids for pedestrian coordinates to represent every combination of p1 and p2
+    p1_x_grid, p2_x_grid = np.meshgrid(p1[:, 0], p2[:, 0], indexing='ij')
+    p1_y_grid, p2_y_grid = np.meshgrid(p1[:, 1], p2[:, 1], indexing='ij')
+    
+    # Slopes and intercepts for paths defined by all combinations of p1 and p2
+    mp = (p2_y_grid - p1_y_grid) / (p2_x_grid - p1_x_grid)
+    bp = p1_y_grid - mp * p1_x_grid
+    
+    # Intersection calculations
+    x_intercept = (bp - bw_expanded) / (mw_expanded - mp)
+    y_intercept = mw_expanded * x_intercept + bw_expanded
+    
+    # Avoid division by zero and parallel paths
+    valid = (~np.isclose(mw_expanded, mp)) & (~np.isnan(x_intercept)) & (~np.isnan(y_intercept))
+    
+    # Bounds checking for each wall against each path
+    wall_x_min, wall_x_max = np.minimum(w1[:, 0, np.newaxis, np.newaxis], w2[:, 0, np.newaxis, np.newaxis]), np.maximum(w1[:, 0, np.newaxis, np.newaxis], w2[:, 0, np.newaxis, np.newaxis])
+    wall_y_min, wall_y_max = np.minimum(w1[:, 1, np.newaxis, np.newaxis], w2[:, 1, np.newaxis, np.newaxis]), np.maximum(w1[:, 1, np.newaxis, np.newaxis], w2[:, 1, np.newaxis, np.newaxis])
+    
+    within_walls_x = (x_intercept >= wall_x_min) & (x_intercept <= wall_x_max)
+    within_walls_y = (y_intercept >= wall_y_min) & (y_intercept <= wall_y_max)
+    
+    # Ensure path start and end points also define valid segments (not reversed in space)
+    path_x_min, path_x_max = np.minimum(p1_x_grid, p2_x_grid), np.maximum(p1_x_grid, p2_x_grid)
+    path_y_min, path_y_max = np.minimum(p1_y_grid, p2_y_grid), np.maximum(p1_y_grid, p2_y_grid)
+    
+    within_paths_x = (x_intercept >= path_x_min) & (x_intercept <= path_x_max)
+    within_paths_y = (y_intercept >= path_y_min) & (y_intercept <= path_y_max)
+    
+    # Combining checks: valid intersections within both wall and path bounds
+    valid_intersections = valid & within_walls_x & within_walls_y & within_paths_x & within_paths_y
+    
+    # Reduce to a boolean tensor indicating if any wall intersects each possible path
+    intersects_any_wall = np.any(valid_intersections, axis=0)
+    
+    return intersects_any_wall
+
+def check_if_same_room(a, b, walls=constants.WALLS):
+    m, n = len(a), len(b)
+    # Initialize the mask with True values
+    mask = np.ones((m, n), dtype=bool)  
+    # Update the mask to False where segments intersect with any wall
+    for i in range(m):
+        for j in range(n):
+            segment_start = a[i]
+            segment_end = b[j]
+            for wall in walls:
+                if do_intersect(segment_start, segment_end, wall[0], wall[1]):
+                            mask[i, j] = False
+                break  # No need to check other walls if one intersection is found            
+    return mask  
+
+
+
+def check_if_same_room_parallel(a, b, walls=constants.WALLS):
+    #print(f"Initial shapes: a={a.shape}, b={b.shape}")  # Debug print
+
+    # Ensure all inputs are numpy arrays
+    a = np.array(a)  # Assuming shape (N, 2)
+    b = np.array(b)  # Assuming shape (M, 2)
+    print(f"After conversion to numpy: a={a.shape}, b={b.shape}")  # Debug print
+
+    # Initialize the mask with True values
+    m, n = a.shape[0], b.shape[0]
+    mask = np.ones((m, n), dtype=bool)
+    print(f"Mask initial shape: {mask.shape}")  # Debug print
+
+    # Expand dimensions for broadcasting without looping through i and j
+    # a_expanded shape will be (N, 1, 2) to compare with b shape (1, M, 2)
+    a_expanded = np.expand_dims(a, axis=1)
+    b_expanded = np.expand_dims(b, axis=0)
+
+    # Iterate over each wall for intersection checks
+    for wall in walls:
+        wall_start, wall_end = np.array(wall[0]), np.array(wall[1])
+        #print(f"Checking wall start: {wall_start}, wall end: {wall_end}")  # Debug print
+
+        # Use broadcasting to compare all segments against the current wall
+        intersects = do_intersect_parallel(wall_start, wall_end, a, b)
+        print(f"intersects shape: {intersects.shape}")
+        intersects_squeezed = np.squeeze(intersects)
+        print(f"intersects_squeezed shape: {intersects_squeezed.shape}")
+        # Update mask based on intersections - if any intersection is found, set to False
+        mask &= ~intersects_squeezed  # This uses logical AND to retain False where intersections occur
+
+    print(f"Final mask shape: {mask.shape}")  # Debug print
+    return np.squeeze(mask)
+
 def calculate_detour(agent_pos, pedestrian_pos, wall):
     # Calculate distances for detours via wall[0] and wall[1]
     detour_via_wall0 = np.linalg.norm(agent_pos - wall[0]) + np.linalg.norm(wall[0] - pedestrian_pos)
@@ -486,53 +718,7 @@ def check_vertical_bumping(positions, old_pos, num_openings, opening_positions):
             #np.abs(positions[:, 1] - opening_position) > constants.VERTICAL_WALL_HALF_WIDTH* (1 - (action[[-1]] + 1))/2   
         )
     return to_bump_mask
-def check_if_same_room(a, b, walls=constants.WALLS):
-    m, n = len(a), len(b)
-    # Initialize the mask with True values
-    mask = np.ones((m, n), dtype=bool)  
-    # Update the mask to False where segments intersect with any wall
-    for i in range(m):
-        for j in range(n):
-            segment_start = a[i]
-            segment_end = b[j]
-            for wall in walls:
-                if do_intersect(segment_start, segment_end, wall[0], wall[1]):
-                            mask[i, j] = False
-                break  # No need to check other walls if one intersection is found            
-    return mask  
-def check_if_same_room_parallel(a, b, walls):
-    # Ensure all inputs are numpy arrays
-    a = np.array(a)
-    b = np.array(b)
-    walls_start, walls_end = np.transpose(walls, (1, 0, 2))[0], np.transpose(walls, (1, 0, 2))[1]
 
-    # Prepare to broadcast a and b points against all walls
-    a_expanded = np.expand_dims(a, 1)
-    b_expanded = np.expand_dims(b, 1)
-
-    # Initialize the mask with True values
-    m, n = len(a), len(b)
-    mask = np.ones((m, n, len(walls)), dtype=bool)
-
-    # Calculate intersections for each pair of points in a and b against each wall
-    for wall_index, (wall_start, wall_end) in enumerate(zip(walls_start, walls_end)):
-        # Use broadcasting to compare each point in a and b against the current wall
-        # Note: do_intersect_parallel now needs to accept and efficiently handle broadcasting across walls
-        intersects = do_intersect_parallel(
-            a_expanded.repeat(len(walls), axis=1),
-            b_expanded.repeat(len(walls), axis=1),
-            np.array([wall_start] * m).repeat(n, axis=0),
-            np.array([wall_end] * m).repeat(n, axis=0)
-        )
-
-        # Update mask based on intersections - if any intersection is found, set to False
-        mask[:, :, wall_index] = ~intersects.reshape(m, n)
-
-    # Determine if same room by ensuring no wall intersections
-    # Axis 2 aggregates across all walls - if True for any wall, it means no intersection with that wall
-    same_room = np.all(mask, axis=2)
-
-    return same_room
 class Area:
     def __init__(self, 
         reward: Reward,
@@ -582,7 +768,8 @@ class Area:
         fv = reduce(np.logical_or, (following, viscek))
         dm = distance_matrix(pedestrians.positions[fv],
                              pedestrians.positions[efv], 2)
-        sr = check_if_same_room(pedestrians.positions[fv],pedestrians.positions[efv]) 
+        #sr = check_if_same_room(pedestrians.positions[fv],pedestrians.positions[efv]) 
+        sr = check_if_same_room_parallel(pedestrians.positions[fv],pedestrians.positions[efv]) 
         intersection = np.where(dm < SwitchDistances.to_pedestrian, 1, 0) 
         intersection = np.logical_and(intersection, sr)
 
