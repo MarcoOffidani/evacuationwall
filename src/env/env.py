@@ -447,7 +447,23 @@ def calculate_slope_and_intercept_parallel(wall, pedestrians_positions):
     intercept_nv = np.where(condition_array, wall_expanded[:, :, 0], wall_expanded[:, :, 1] - slope_nv * wall_expanded[:, :, 0]) #replaced "nan" with "wall_expanded[:, :, 0]"
     #print(f"intercept_nv shpae: {intercept_nv.shape}")
     return slope_nv, intercept_nv
+def calculate_slope_and_intercept_walls(wall_start, wall_end):
 
+    
+    # Compare x-coordinates to find vertical lines
+
+    condition_array = wall_start[:, 0] == wall_end[:,  0]
+    # Calculate slopes for non-vertical lines
+    # Use broadcasting rules for subtraction and division
+    delta_x = np.where(condition_array, 1e-8 ,wall_start[:, 0] - wall_end[:,  0])
+    delta_y = wall_end[:,  1] - wall_end[:,  1]
+    #slope_nv = np.where(condition_array, np.nan, (delta_y / delta_x))  #warning: divide by 0 or nan
+    slope_nv = np.where(condition_array, np.nan, (delta_y / delta_x ))  #trying to solve previous shit
+    #print(f"slope_nv shpae: {slope_nv.shape}")
+    # Calculate intercepts for non-vertical lines using the formula: b = y - mx
+    intercept_nv = np.where(condition_array, wall_start[:, 0] , wall_start[:, 1]  - slope_nv * wall_start[:, 0] ) 
+    #print(f"intercept_nv shpae: {intercept_nv.shape}")
+    return slope_nv, intercept_nv
 def do_intersect(w1, w2, p1, p2):
     m1, b1 = calculate_slope_and_intercept(w1, w2)
     m2, b2 = calculate_slope_and_intercept(p1, p2)
@@ -571,8 +587,8 @@ def do_intersect_parallel(w1, w2, p1, p2):
     p1, p2 = np.array(p1), np.array(p2)
     # Assuming calculate_slope_and_intercept_parallel is already correctly implemented as per your description
     # Calculate slopes and intercepts for wall (w1, w2) and pedestrians (p1, p2)
-    #print(f"Shapes before calculation: w1={w1.shape}, w2={w2.shape}, p1={p1.shape}, p2={p2.shape}")
-    mw, bw = calculate_slope_and_intercept_parallel(w1, w2)
+    print(f"Shapes before calculation: w1={w1.shape}, w2={w2.shape}, p1={p1.shape}, p2={p2.shape}")
+    mw, bw = calculate_slope_and_intercept_walls(w1, w2) #not needed at all, use  simpler numpy shit that does not do all combinations
     mp, bp = calculate_slope_and_intercept_parallel(p1, p2)
     #print(f"Shapes after calculation: mw={np.shape(mw)}, bw={np.shape(bw)}, mp={np.shape(mp)}, bp={np.shape(bp)}")    
     # Identify vertical and parallel lines
@@ -636,7 +652,7 @@ def check_if_same_room(a, b, walls=constants.WALLS):
 
 def check_if_same_room_parallel(a, b, walls=constants.WALLS):
     #print(f"Initial shapes: a={a.shape}, b={b.shape}")  # Debug print
-
+    walls_array= np.array(walls)
     # Ensure all inputs are numpy arrays
     a = np.array(a)  # Assuming shape (N, 2)
     b = np.array(b)  # Assuming shape (M, 2)
@@ -653,8 +669,12 @@ def check_if_same_room_parallel(a, b, walls=constants.WALLS):
     b_expanded = np.expand_dims(b, axis=0)
 
     # Iterate over each wall for intersection checks
-    for wall in walls:
+    '''for wall in walls:
+        print(f" wall in walls type:= {type(wall)}") 
         wall_start, wall_end = np.array(wall[0]), np.array(wall[1])
+        print(f" first walls start:= {wall_start}")
+        print(f"first walls start/end shape:= {wall_start.shape}")
+        print(f"first walls start/end type:= {type(wall_start)}")
         #print(f"Checking wall start: {wall_start}, wall end: {wall_end}")  # Debug print
 
         # Use broadcasting to compare all segments against the current wall
@@ -663,8 +683,21 @@ def check_if_same_room_parallel(a, b, walls=constants.WALLS):
         intersects_squeezed = np.squeeze(intersects)
         #print(f"intersects_squeezed shape: {intersects_squeezed.shape}")
         # Update mask based on intersections - if any intersection is found, set to False
-        mask &= ~intersects_squeezed  # This uses logical AND to retain False where intersections occur
+        mask &= ~intersects_squeezed  # This uses logical AND to retain False where intersections occur'''
+    #print(f" walls shape:= {walls_array.shape}")
+    wall_start, wall_end = (walls_array[:,0]).squeeze(), np.array(walls_array[:,1]).squeeze()
+    '''print(f" second walls start:= {wall_start}")
+    print(f" second walls start/end shape:= {wall_start.shape}")
+    print(f" second walls start/end type:= {type(wall_start)}")'''
+        #print(f"Checking wall start: {wall_start}, wall end: {wall_end}")  # Debug print
 
+        # Use broadcasting to compare all segments against the current wall
+    intersects = do_intersect_parallel(wall_start, wall_end, a, b)
+        #print(f"intersects shape: {intersects.shape}")
+    intersects_squeezed = np.squeeze(intersects)
+        #print(f"intersects_squeezed shape: {intersects_squeezed.shape}")
+        # Update mask based on intersections - if any intersection is found, set to False
+    mask &= ~intersects_squeezed 
     #print(f"Final mask shape: {mask.shape}")  # Debug print
     return np.squeeze(mask)
 
