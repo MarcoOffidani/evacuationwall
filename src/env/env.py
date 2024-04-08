@@ -150,7 +150,7 @@ def update_statuses(statuses, pedestrian_positions, agent_position, exit_positio
     new_statuses[following] = Status.FOLLOWER'''
     agent_position_array = agent_position[np.newaxis, :] 
     following = np.logical_and(is_distance_low(
-        pedestrian_positions, agent_position, SwitchDistances.to_leader) , check_if_same_room_parallel( agent_position_array,pedestrian_positions))
+        pedestrian_positions, agent_position, SwitchDistances.to_leader) , check_if_there_is_a_direct_path( agent_position_array,pedestrian_positions))
     new_statuses[following] = Status.FOLLOWER
     
     exiting = is_distance_low(
@@ -227,13 +227,15 @@ class Agent:
     enslaving_degree: float                     # 0 < enslaving_degree <= 1
 
     def __init__(self, enslaving_degree):
-        self.start_position = np.zeros(2, dtype=np.float32)
+        #self.start_position = np.array([0, -0.95])
+        self.start_position = np.random.uniform(-1, 1, size=(2,))
         self.start_direction = np.zeros(2, dtype=np.float32)
         self.enslaving_degree = enslaving_degree
         
     def reset(self):
-        self.position = self.start_position.copy()
-        self.direction = self.start_position.copy()
+        #self.position = self.start_position.copy()
+        self.position = np.random.uniform(-1, 1, size=(2,))
+        self.direction = np.zeros(2, dtype=np.float32)
         self.memory = {'position' : []}
 
     def save(self):
@@ -273,7 +275,10 @@ class Time:
 def grad_potential_pedestrians(
         agent: Agent, pedestrians: Pedestrians, alpha: float = constants.ALPHA
     ) -> np.ndarray:
-    R = agent.position[np.newaxis, :] - pedestrians.positions
+    #print(f"Shapes before calculation in grad_potential pedestrians: agent position={agent.position.shape}, pedestrians positions ={pedestrians.positions.shape}")
+    condition_array = check_if_there_is_a_direct_path(agent.pbsition[np.newaxis, :] , pedestrians.positions)
+    R = np.where(condition_array[:, np.newaxis],- agent.position[np.newaxis, :] + pedestrians.positions, calculate_detour(agent.position , pedestrians.positions))
+    #R = agent.position[np.newaxis, :] - pedestrians.positions
     R = R[pedestrians.statuses == Status.VISCEK]
 
     if len(R) != 0:
@@ -288,7 +293,12 @@ def grad_potential_pedestrians(
 def grad_potential_exit(
         agent: Agent, pedestrians: Pedestrians, exit: Exit, alpha: float = constants.ALPHA
     ) -> np.ndarray:
-    R = agent.position - exit.position
+    condition_array = check_if_there_is_a_direct_path(agent.position[np.newaxis, :] , exit.position[np.newaxis, :])
+    #print(f"ondition array type: {type(condition_array)}")
+    #print(f"Shapes before calculation in grad_potential exit : agent position={agent.position.shape}, exit position ={exit.position[np.newaxis, :].shape}, condition_array:= {condition_array.shape}")
+    R = np.where(condition_array[:, np.newaxis], - agent.position[np.newaxis, :] + exit.position[np.newaxis, :], calculate_detour(agent.position , exit.position[np.newaxis, :]))
+    #R = agent.position[np.newaxis, :] - pedestrians.positions
+    
     norm = np.linalg.norm(R) + constants.EPS
     grad = - alpha / norm ** (alpha + 2) * R
     grad *= sum(pedestrians.statuses == Status.FOLLOWER)
@@ -298,7 +308,9 @@ def grad_time_derivative_pedestrians(
         agent: Agent, pedestrians: Pedestrians, alpha: float = constants.ALPHA
     ) -> np.ndarray:
 
-    R = agent.position[np.newaxis, :] - pedestrians.positions
+    #R = - agent.position[np.newaxis, :] + pedestrians.positions
+    condition_array = check_if_there_is_a_direct_path(agent.position[np.newaxis, :] , pedestrians.positions)
+    R = np.where(condition_array[:, np.newaxis], - agent.position[np.newaxis, :] + pedestrians.positions, calculate_detour(agent.position , pedestrians.positions))
     R = R[pedestrians.statuses == Status.VISCEK]
 
     V = agent.direction[np.newaxis, :] - pedestrians.positions
@@ -316,10 +328,14 @@ def grad_time_derivative_exit(
         agent: Agent, pedestrians: Pedestrians, exit: Exit, alpha: float = constants.ALPHA
     ) -> np.ndarray:
 
-    R = agent.position - exit.position
-
+    #R = agent.position - exit.position
+    condition_array = check_if_there_is_a_direct_path(agent.position[np.newaxis, :] , exit.position[np.newaxis, :])
+    #print(f"ondition array type: {type(condition_array)}")
+    #print(f"Shapes before calculation in grad_potential exit : agent position={agent.position.shape}, exit position ={exit.position[np.newaxis, :].shape}, condition_array:= {condition_array.shape}")
+    R = np.where(condition_array[:, np.newaxis], - agent.position[np.newaxis, :] + exit.position[np.newaxis, :], calculate_detour(agent.position , exit.position[np.newaxis, :]))
     V = agent.direction
-    
+    # Ensure R is reshaped to a 1-D array if it's not already
+    R = R.squeeze()
     N = sum(pedestrians.statuses == Status.FOLLOWER)
 
     if N != 0:
@@ -587,7 +603,7 @@ def do_intersect_parallel(w1, w2, p1, p2):
     p1, p2 = np.array(p1), np.array(p2)
     # Assuming calculate_slope_and_intercept_parallel is already correctly implemented as per your description
     # Calculate slopes and intercepts for wall (w1, w2) and pedestrians (p1, p2)
-    print(f"Shapes before calculation: w1={w1.shape}, w2={w2.shape}, p1={p1.shape}, p2={p2.shape}")
+    #print(f"Shapes before calculation: w1={w1.shape}, w2={w2.shape}, p1={p1.shape}, p2={p2.shape}")
     mw, bw = calculate_slope_and_intercept_walls(w1, w2) #not needed at all, use  simpler numpy shit that does not do all combinations
     mp, bp = calculate_slope_and_intercept_parallel(p1, p2)
     #print(f"Shapes after calculation: mw={np.shape(mw)}, bw={np.shape(bw)}, mp={np.shape(mp)}, bp={np.shape(bp)}")    
@@ -650,7 +666,7 @@ def check_if_same_room(a, b, walls=constants.WALLS):
 
 
 
-def check_if_same_room_parallel(a, b, walls=constants.WALLS):
+def check_if_there_is_a_direct_path(a, b, walls=constants.WALLS):
     #print(f"Initial shapes: a={a.shape}, b={b.shape}")  # Debug print
     walls_array= np.array(walls)
     # Ensure all inputs are numpy arrays
@@ -693,35 +709,51 @@ def check_if_same_room_parallel(a, b, walls=constants.WALLS):
 
         # Use broadcasting to compare all segments against the current wall
     intersects = do_intersect_parallel(wall_start, wall_end, a, b)
-        #print(f"intersects shape: {intersects.shape}")
-    intersects_squeezed = np.squeeze(intersects)
-        #print(f"intersects_squeezed shape: {intersects_squeezed.shape}")
+    #print(f"intersects shape: {intersects.shape}")
+    #intersects_squeezed = np.atleast_1d(np.squeeze(intersects))
+    if intersects.size == 0:
+        intersects_squeezed = np.array([], dtype=bool).reshape(intersects.shape)
+    else:
+        intersects_squeezed = np.atleast_1d(np.squeeze(intersects))
+    #print(f"intersects_squeezed shape: {intersects_squeezed.shape}")
         # Update mask based on intersections - if any intersection is found, set to False
-    mask &= ~intersects_squeezed 
+    mask &= ~intersects_squeezed #try mask = np.logical_and(mask, ~np.any(intersects_squeezed, axis=-1, keepdims=True))
     #print(f"Final mask shape: {mask.shape}")  # Debug print
-    return np.squeeze(mask)
+    #print(f"Squeezed mask  shape: {np.atleast_1d(np.squeeze(mask).shape)}")  # Debug print
+    return np.atleast_1d(np.squeeze(mask))
 
-def calculate_detour(agent_pos, pedestrian_pos, wall):
+def calculate_detour(agent_pos, pedestrian_pos,  walls=constants.WALLS):
     # Calculate distances for detours via wall[0] and wall[1]
-    detour_via_wall0 = np.linalg.norm(agent_pos - wall[0]) + np.linalg.norm(wall[0] - pedestrian_pos)
-    detour_via_wall1 = np.linalg.norm(agent_pos - wall[1]) + np.linalg.norm(wall[1] - pedestrian_pos)
-    
+    wall= np.array(walls)
+    #print(f"Shapes before calculation in calculate_detous: agent pos={agent_pos.shape}, pedestrian possitions ={pedestrian_pos.shape}, wall = {wall.shape}, wall0 = {wall[0].shape}")    
+    '''detour_via_wall0 = np.linalg.norm(agent_pos - wall[0]) + np.linalg.norm(wall[0] - pedestrian_pos)
+    detour_via_wall1 = np.linalg.norm(agent_pos - wall[1]) + np.linalg.norm(wall[1] - pedestrian_pos)'''
+    # Assuming agent_pos.shape is (2,) and pedestrian_pos.shape is (N, 2)
+    detour_via_wall0 = np.linalg.norm( - agent_pos + wall[:,0], axis=-1) + np.linalg.norm( - wall[:,0] + pedestrian_pos, axis=-1)
+    detour_via_wall1 = np.linalg.norm( - agent_pos + wall[:,1], axis=-1) + np.linalg.norm( - wall[:,1] + pedestrian_pos, axis=-1)
+    #print(f"Shapes of detour_via_wall0: agent pos={detour_via_wall0.shape}")
     # Choose the shortest path
-    if detour_via_wall0 < detour_via_wall1:
+    condition_array = ( detour_via_wall0 < detour_via_wall1)
+    '''if detour_via_wall0 < detour_via_wall1:
         chosen_wall_corner = wall[0]
         detour_distance = detour_via_wall0
     else:
         chosen_wall_corner = wall[1]
-        detour_distance = detour_via_wall1
-    
+        detour_distance = detour_via_wall1'''
+    chosen_wall_corner = np.where(condition_array[:, np.newaxis], wall[:,0], wall[:,1])
+    detour_distance = np.where(condition_array, detour_via_wall0, detour_via_wall1)
+    #print(f" Shape of chosen wall corner:= {chosen_wall_corner.shape}")
     # Construct the detour vector
     # First, find the direction vector from agent to the chosen corner and normalize it
     direction_to_corner = chosen_wall_corner - agent_pos
+    #print(f" Shape of diretion to corner:= {direction_to_corner.shape}")
     direction_to_corner_normalized = direction_to_corner / np.linalg.norm(direction_to_corner)
-    
+    #print(f" Shape of direction_to_corner_normalized:= {direction_to_corner_normalized.shape}")
+    #print(f" Shape of detour_distance:= {detour_distance.shape}")
     # Then, create the detour vector with the correct magnitude (total detour distance)
-    detour_vector = direction_to_corner_normalized * detour_distance
-    
+    #detour_vector = direction_to_corner_normalized * detour_distance[:, None]
+    detour_vector = np.multiply(direction_to_corner_normalized , detour_distance[:, np.newaxis])
+    #print(f" Shape of detour vector:= {detour_vector.shape}")
     return detour_vector
 #def check_horizonthal_bumping(positions, old_pos, num_openings, opening_positions, doors):
 def check_horizonthal_bumping(positions, old_pos, num_openings, opening_positions):
@@ -803,7 +835,7 @@ class Area:
         dm = distance_matrix(pedestrians.positions[fv],
                              pedestrians.positions[efv], 2)
         #sr = check_if_same_room(pedestrians.positions[fv],pedestrians.positions[efv]) 
-        sr = check_if_same_room_parallel(pedestrians.positions[fv],pedestrians.positions[efv]) 
+        sr = check_if_there_is_a_direct_path(pedestrians.positions[fv],pedestrians.positions[efv]) 
         intersection = np.where(dm < SwitchDistances.to_pedestrian, 1, 0) 
         intersection = np.logical_and(intersection, sr)
 

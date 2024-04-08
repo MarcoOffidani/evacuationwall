@@ -4,7 +4,7 @@
 
 NUM_PEDESTRIANS = 50                        # ! number of pedestrians
 EPS = 1e-8 
-ENSLAVING_DEGREE = 1                      # ! leader's enslaving degree
+ENSLAVING_DEGREE = 0.8                      # ! leader's enslaving degree
 
 # Area params
 WIDTH = 1.                                  # ! geometry of environment space: width
@@ -30,7 +30,7 @@ N_TIMESTEPS = 0                             # ! number of timesteps already done
 
 # Gravity embedding params
 ENABLED_GRAVITY_EMBEDDING = True            # ! if True use gravity embedding
-ENABLED_GRAVITY_AND_SPEED_EMBEDDING = False 
+ENABLED_GRAVITY_AND_SPEED_EMBEDDING = True 
 ALPHA = 3                                   # ! parameter of gradient state
 
 SWITCH_DISTANCE_TO_LEADER = 0.2             # radius of catch by leader
