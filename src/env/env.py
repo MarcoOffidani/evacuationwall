@@ -276,7 +276,7 @@ def grad_potential_pedestrians(
         agent: Agent, pedestrians: Pedestrians, alpha: float = constants.ALPHA
     ) -> np.ndarray:
     #print(f"Shapes before calculation in grad_potential pedestrians: agent position={agent.position.shape}, pedestrians positions ={pedestrians.positions.shape}")
-    condition_array = check_if_there_is_a_direct_path(agent.pbsition[np.newaxis, :] , pedestrians.positions)
+    condition_array = check_if_there_is_a_direct_path(agent.position[np.newaxis, :] , pedestrians.positions)
     R = np.where(condition_array[:, np.newaxis],- agent.position[np.newaxis, :] + pedestrians.positions, calculate_detour(agent.position , pedestrians.positions))
     #R = agent.position[np.newaxis, :] - pedestrians.positions
     R = R[pedestrians.statuses == Status.VISCEK]
