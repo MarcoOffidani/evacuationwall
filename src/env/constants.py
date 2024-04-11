@@ -2,7 +2,7 @@
 # Note: params with (!) in comment are only default params, which
 # can be changed with argparse module in main.py
 
-NUM_PEDESTRIANS = 50                        # ! number of pedestrians
+NUM_PEDESTRIANS = 50                       # ! number of pedestrians
 EPS = 1e-8 
 ENSLAVING_DEGREE = 0.8                      # ! leader's enslaving degree
 
@@ -35,7 +35,7 @@ ALPHA = 3                                   # ! parameter of gradient state
 
 SWITCH_DISTANCE_TO_LEADER = 0.2             # radius of catch by leader
 SWITCH_DISTANCE_TO_OTHER_PEDESTRIAN = 0.1   # SWITCH_DISTANCE_TO_LEADER
-SWITCH_DISTANCE_TO_EXIT   = 0.4
+SWITCH_DISTANCE_TO_EXIT   = 0.3
 SWITCH_DISTANCE_TO_ESCAPE = 0.01
 
 SAVE_PATH_GIFF = 'saved_data/giff'

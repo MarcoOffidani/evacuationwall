@@ -20,7 +20,7 @@ def setup_env(args, experiment_name):
         noise_coef=args.noise_coef,
         is_termination_agent_wall_collision=args.is_termination_agent_wall_collision,
         is_new_exiting_reward=args.is_new_exiting_reward,
-        is_new_followers_reward=args.is_new_followers_reward,
+        is_new_followers_=args.is_new_followers_reward,
         intrinsic_reward_coef=args.intrinsic_reward_coef,
         max_timesteps=args.max_timesteps,
         n_episodes=args.n_episodes,

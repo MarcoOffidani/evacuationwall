@@ -123,7 +123,7 @@ class Reward:
         reward = self.init_reward_each_step
         time_factor = 1 - timesteps / (200 * num_pedestrians)
 
-        # Reward for new exiting
+        # Reward for new exiting €€€ distinguie viscek from pedestrian
         if self.is_new_exiting_reward:
             prev = np.logical_or(old_statuses == Status.VISCEK, 
                                  old_statuses == Status.FOLLOWER)
@@ -149,8 +149,15 @@ def update_statuses(statuses, pedestrian_positions, agent_position, exit_positio
         pedestrian_positions, agent_position, SwitchDistances.to_leader)
     new_statuses[following] = Status.FOLLOWER'''
     agent_position_array = agent_position[np.newaxis, :] 
+    #print(f"{do_intersect_parallel_allinone( agent_position_array,pedestrian_positions).shape=}")
+    #print(f"{np.any(do_intersect_parallel_allinone( agent_position_array,pedestrian_positions), axis=1)=}")
+    #print(f"{is_distance_low(pedestrian_positions, agent_position, SwitchDistances.to_leader).shape=}")
     following = np.logical_and(is_distance_low(
-        pedestrian_positions, agent_position, SwitchDistances.to_leader) , check_if_there_is_a_direct_path( agent_position_array,pedestrian_positions))
+        pedestrian_positions, agent_position, SwitchDistances.to_leader) , ~np.any(do_intersect_parallel_allinone( agent_position_array,pedestrian_positions), axis=1))
+    
+    #print(f"{np.any(do_intersect_parallel_allinone( agent_position_array,pedestrian_positions)).size=}")
+    #print(f"{following.shape=}")
+    #print(f"{check_if_there_is_a_direct_path( agent_position_array,pedestrian_positions).shape=}")
     new_statuses[following] = Status.FOLLOWER
     
     exiting = is_distance_low(
@@ -190,7 +197,9 @@ class Pedestrians:
 
     def reset(self, agent_position, exit_position):
         self.positions  = np.random.uniform(-1.0, 1.0, size=(self.num, 2))
+        #self.positions  = np.random.uniform(0.3, 0.4, size=(self.num, 2))
         self.directions = np.random.uniform(-1.0, 1.0, size=(self.num, 2))
+        #self.directions = np.random.uniform(-1e-8, 1e-8, size=(self.num, 2))
         self.normirate_directions()
         self.statuses = np.array([Status.VISCEK for _ in range(self.num)])
         self.statuses = update_statuses(
@@ -227,19 +236,24 @@ class Agent:
     enslaving_degree: float                     # 0 < enslaving_degree <= 1
 
     def __init__(self, enslaving_degree):
-        #self.start_position = np.array([0, -0.95])
+        #self.start_position = np.array([0, -0.65])
         self.start_position = np.random.uniform(-1, 1, size=(2,))
         self.start_direction = np.zeros(2, dtype=np.float32)
         self.enslaving_degree = enslaving_degree
-        
+        self.start_observation_grad_ped = np.zeros(2, dtype=np.float32)
+        self.start_observation_grad_ex = np.zeros(2, dtype=np.float32)
     def reset(self):
         #self.position = self.start_position.copy()
         self.position = np.random.uniform(-1, 1, size=(2,))
+        self.observation_grad_ped = self.start_observation_grad_ped.copy()
+        self.observation_grad_ex = self.start_observation_grad_ex.copy()
         self.direction = np.zeros(2, dtype=np.float32)
-        self.memory = {'position' : []}
+        self.memory = {'position' : [], 'observation_grad_ped' : [], 'observation_grad_ex' : []}
 
     def save(self):
         self.memory['position'].append(self.position.copy())
+        self.memory['observation_grad_ped'].append(self.observation_grad_ped.copy())
+        self.memory['observation_grad_ex'].append(self.observation_grad_ex.copy())
 
 
 class Exit:
@@ -276,32 +290,35 @@ def grad_potential_pedestrians(
         agent: Agent, pedestrians: Pedestrians, alpha: float = constants.ALPHA
     ) -> np.ndarray:
     #print(f"Shapes before calculation in grad_potential pedestrians: agent position={agent.position.shape}, pedestrians positions ={pedestrians.positions.shape}")
-    condition_array = check_if_there_is_a_direct_path(agent.position[np.newaxis, :] , pedestrians.positions)
-    R = np.where(condition_array[:, np.newaxis],- agent.position[np.newaxis, :] + pedestrians.positions, calculate_detour(agent.position , pedestrians.positions))
+    condition_array = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , pedestrians.positions)
+    #R = np.where(condition_array[:, np.newaxis],- agent.position[np.newaxis, :] + pedestrians.positions, calculate_detour(agent.position , pedestrians.positions))
+    R = np.where(condition_array,- agent.position[np.newaxis, :] + pedestrians.positions, calculate_detour(agent.position , pedestrians.positions))
     #R = agent.position[np.newaxis, :] - pedestrians.positions
     R = R[pedestrians.statuses == Status.VISCEK]
 
     if len(R) != 0:
         norm = np.linalg.norm(R, axis = 1)[:, np.newaxis] + constants.EPS
-        grad = - alpha / norm ** (alpha + 2) * R
+        grad =  alpha / norm ** (alpha + 2) * R
         grad = grad.sum(axis = 0)
     else:
         grad = np.zeros(2)
+    #print(f"{grad=}, {grad.shape=}")
     return grad
 
 
 def grad_potential_exit(
         agent: Agent, pedestrians: Pedestrians, exit: Exit, alpha: float = constants.ALPHA
     ) -> np.ndarray:
-    condition_array = check_if_there_is_a_direct_path(agent.position[np.newaxis, :] , exit.position[np.newaxis, :])
+    condition_array = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , exit.position[np.newaxis, :])
     #print(f"ondition array type: {type(condition_array)}")
     #print(f"Shapes before calculation in grad_potential exit : agent position={agent.position.shape}, exit position ={exit.position[np.newaxis, :].shape}, condition_array:= {condition_array.shape}")
     R = np.where(condition_array[:, np.newaxis], - agent.position[np.newaxis, :] + exit.position[np.newaxis, :], calculate_detour(agent.position , exit.position[np.newaxis, :]))
     #R = agent.position[np.newaxis, :] - pedestrians.positions
     
     norm = np.linalg.norm(R) + constants.EPS
-    grad = - alpha / norm ** (alpha + 2) * R
+    grad = alpha / norm ** (alpha + 2) * R
     grad *= sum(pedestrians.statuses == Status.FOLLOWER)
+    #print(f"{grad=}, {grad.shape=}")
     return grad
 
 def grad_time_derivative_pedestrians(
@@ -309,7 +326,7 @@ def grad_time_derivative_pedestrians(
     ) -> np.ndarray:
 
     #R = - agent.position[np.newaxis, :] + pedestrians.positions
-    condition_array = check_if_there_is_a_direct_path(agent.position[np.newaxis, :] , pedestrians.positions)
+    condition_array = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , pedestrians.positions)
     R = np.where(condition_array[:, np.newaxis], - agent.position[np.newaxis, :] + pedestrians.positions, calculate_detour(agent.position , pedestrians.positions))
     R = R[pedestrians.statuses == Status.VISCEK]
 
@@ -318,7 +335,7 @@ def grad_time_derivative_pedestrians(
 
     if len(R) != 0:
         norm = np.linalg.norm(R, axis = 1)[:, np.newaxis] + constants.EPS
-        grad = - alpha / norm ** (alpha + 4) * (V * norm**2 - (alpha + 2) * np.sum(V * R, axis=1, keepdims=True) * R)
+        grad = alpha / norm ** (alpha + 4) * (V * norm**2 - (alpha + 2) * np.sum(V * R, axis=1, keepdims=True) * R)
         grad = grad.sum(axis=0)
     else:
         grad = np.zeros(2)
@@ -329,7 +346,7 @@ def grad_time_derivative_exit(
     ) -> np.ndarray:
 
     #R = agent.position - exit.position
-    condition_array = check_if_there_is_a_direct_path(agent.position[np.newaxis, :] , exit.position[np.newaxis, :])
+    condition_array = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , exit.position[np.newaxis, :])
     #print(f"ondition array type: {type(condition_array)}")
     #print(f"Shapes before calculation in grad_potential exit : agent position={agent.position.shape}, exit position ={exit.position[np.newaxis, :].shape}, condition_array:= {condition_array.shape}")
     R = np.where(condition_array[:, np.newaxis], - agent.position[np.newaxis, :] + exit.position[np.newaxis, :], calculate_detour(agent.position , exit.position[np.newaxis, :]))
@@ -337,10 +354,10 @@ def grad_time_derivative_exit(
     # Ensure R is reshaped to a 1-D array if it's not already
     R = R.squeeze()
     N = sum(pedestrians.statuses == Status.FOLLOWER)
-
+    #print("speed activated")
     if N != 0:
         norm = np.linalg.norm(R) + constants.EPS
-        grad = - alpha / norm ** (alpha + 4) * (V * norm**2 - (alpha + 2) * np.dot(V, R) * R)
+        grad = alpha / norm ** (alpha + 4) * (V * norm**2 - (alpha + 2) * np.dot(V, R) * R)
         grad *= N
     else:
         grad = np.zeros(2)
@@ -442,27 +459,29 @@ import numpy as np'''
     intercept_nv = np.where(condition_array, np.nan, wall[:, 1] - slope_nv * wall[:, 0])
 
     return slope_nv, intercept_nv'''
-def calculate_slope_and_intercept_parallel(wall, pedestrians_positions):
+def calculate_slope_and_intercept_parallel(p1, pedestrians_positions):
     # Expanding the dimensions of wall and pedestrian positions for broadcasting
     # wall shape becomes (1, 47, 2) and pedestrian_positions shape becomes (50, 1, 2)
-    wall_expanded = np.expand_dims(wall, axis=0)
+    p1_expanded = np.expand_dims(p1, axis=0)
     pedestrians_expanded = np.expand_dims(pedestrians_positions, axis=1)
     
     # Compare x-coordinates to find vertical lines
     # This will create a broadcasted comparison matrix of shape (50, 47)
-    condition_array = wall_expanded[:, :, 0] == pedestrians_expanded[:, :, 0]
+    #condition_array = (p1_expanded[:, :, 0] == pedestrians_expanded[:, :, 0])
+    condition_array = np.isclose(p1_expanded[:, :, 0] , pedestrians_expanded[:, :, 0], atol=0.0 )
     #print(f"condition_array shape: {condition_array.shape}")
     # Calculate slopes for non-vertical lines
     # Use broadcasting rules for subtraction and division
-    delta_x = np.where(condition_array, 1e-8 ,pedestrians_expanded[:, :, 0] - wall_expanded[:, :, 0])
-    delta_y = pedestrians_expanded[:, :, 1] - wall_expanded[:, :, 1]
+    delta_x = np.where(condition_array, 1e-12 ,pedestrians_expanded[:, :, 0] - p1_expanded[:, :, 0])
+    delta_y = pedestrians_expanded[:, :, 1] - p1_expanded[:, :, 1]
     #slope_nv = np.where(condition_array, np.nan, (delta_y / delta_x))  #warning: divide by 0 or nan
     slope_nv = np.where(condition_array, np.nan, (delta_y / delta_x ))  #trying to solve previous shit
     #print(f"slope_nv shpae: {slope_nv.shape}")
     # Calculate intercepts for non-vertical lines using the formula: b = y - mx
-    intercept_nv = np.where(condition_array, wall_expanded[:, :, 0], wall_expanded[:, :, 1] - slope_nv * wall_expanded[:, :, 0]) #replaced "nan" with "wall_expanded[:, :, 0]"
+    intercept_nv = np.where(condition_array, p1_expanded[:, :, 0], p1_expanded[:, :, 1] - slope_nv * p1_expanded[:, :, 0]) #replaced "nan" with "wall_expanded[:, :, 0]"
     #print(f"intercept_nv shpae: {intercept_nv.shape}")
-    return slope_nv, intercept_nv
+    #return  intercept_nv, slope_nv
+    return   slope_nv, intercept_nv,
 def calculate_slope_and_intercept_walls(wall_start, wall_end):
 
     
@@ -500,73 +519,211 @@ def do_intersect(w1, w2, p1, p2):
            min(p1[1], p2[1]) <= y <= max(p1[1], p2[1])
 
 
-'''def do_intersect_parallel(w1, w2, p1, p2):
+def do_intersect_parallel_alllinonebroken( p1, p2, walls=constants.WALLS):
+    walls_array = np.array(walls)
     # Convert inputs to numpy arrays for efficient calculations
-    w1, w2 = np.array([w1]), np.array([w2])
+    w1, w2 = (walls_array[:,0]), np.array(walls_array[:,1])
+    #w1, w2 = np.array([w1]), np.array([w2])
     p1, p2 = np.array(p1), np.array(p2)
     
     # Print shapes of the inputs for verification
-    print(f"Shapes before calculation: w1={w1.shape}, w2={w2.shape}, p1={p1.shape}, p2={p2.shape}")
+    #print(f"Shapes before calculation: w1={w1.shape}, w2={w2.shape}, p1={p1.shape}, p2={p2.shape}")
 
     # Calculate slopes and intercepts for all lines
     #m1, b1 = calculate_slope_and_intercept_parallel(w1, w2)
-    m1, b1 = calculate_slope_and_intercept_parallel(w1, w2)
+    m1, b1 = calculate_slope_and_intercept_walls(w1, w2)
+    #print (m1, b1)
     m2, b2 = calculate_slope_and_intercept_parallel(p1, p2)
 
     # Print slopes and intercepts to check their shapes and values
     #print(f"m1: {m1}, b1: {b1}")
     #print(f"m2: {m2}, b2: {b2}")
-    print(f"Shapes after calculation: m1={np.shape(m1)}, b1={np.shape(b1)}, m2={np.shape(m2)}, b2={np.shape(b2)}")
+    #print(f"Shapes after calculation: m1={np.shape(m1)}, b1={np.shape(b1)}, m2={np.shape(m2)}, b2={np.shape(b2)}")
     m1_expanded = m1[:, np.newaxis]  # Shape becomes (m1, 1)
     b1_expanded = b1[:, np.newaxis]  # Shape becomes (b1, 1)
     # Check for parallel and vertical lines
     parallel = np.isclose(m1, m2)
-    vertical1 = np.isnan(m1)
+    vertical1 = np.isnan(m1)[:, np.newaxis] 
     vertical2 = np.isnan(m2)
+    #print(f"Shapes of expanded vectors : m1_expanded={np.shape(m1_expanded)}, b1_expanded={np.shape(b1_expanded)}, m2={np.shape(m2)}, b2={np.shape(b2)}")
 
     # Print information about line orientation
     #print(f"Parallel: {parallel}, Vertical1: {vertical1}, Vertical2: {vertical2}")
 
     # Prepare to calculate intersection points
-    x_intercept = np.zeros((p1.shape[0],p2.shape[0]))
-    y_intercept = np.zeros((p1.shape[0],p2.shape[0]))
-    print(f"Shapes of intercept after declarations: x_intercept={np.shape(x_intercept)}, y_intercept={np.shape(y_intercept)}")
-    # Calculate intersection for non-vertical lines
-    not_vertical = ~vertical1 & ~vertical2 
-    try:
-        x_intercept[not_vertical] = (b2[not_vertical] - b1_expanded) / (m1_expanded - m2[not_vertical])
-        y_intercept[not_vertical] = m1_expanded * x_intercept[not_vertical] + b1_expanded
-    except Exception as e:
-        print(f"Error in calculating non-vertical intersection: {e}")
+    x_intercept = np.zeros((p2.shape[0],p1.shape[0]))
 
+    y_intercept = np.zeros((p2.shape[0],p1.shape[0]))
+    #print("initialization")
+    #print(f"{x_intercept.shape=}, {y_intercept.shape=}")
+    #print(f"Shapes of interepts vectors : x_intercept={np.shape(x_intercept)}, y_intercept ={np.shape(x_intercept )}")
+    #print(f"Shapes of intercept after declarations: x_intercept={np.shape(x_intercept)}, y_intercept={np.shape(y_intercept)}")
+    # Calculate intersection for non-vertical lines
+    #not_vertical = ~vertical1 & ~vertical2 
+    not_vertical = np.logical_not(np.logical_or (vertical1 , vertical2  ))
+    #print(f"Shapes of boolean masks vectors : parallel={np.shape(parallel)}, vertical1 ={np.shape(vertical1 )}, vertical2={np.shape(vertical2)},non_vertical ={np.shape(not_vertical ) }")
+    #try:
+
+    x_intercept = np.where(not_vertical,   ( b2 - b1_expanded) / (m1_expanded - m2 ) , x_intercept)
+    y_intercept = np.where(not_vertical, m1_expanded * x_intercept, y_intercept)
+    #print("after default case")
+    #print(f"{x_intercept.shape=}, {y_intercept.shape=}")
+    #except Exception as e:
+        #print(f"Error in calculating non-vertical x intersection: {e}")
+    #try:
+
+    #except Exception as e:
+        #print(f"Error in calculating non-vertical y intersection: {e}")
     # Print calculated intersection points
-    print(f"x_intercept: {x_intercept}, y_intercept: {y_intercept}")
+    #print(f"x_intercept: {x_intercept}, y_intercept: {y_intercept}")
 
     # Handle cases where one of the lines is vertical
-    try:
-        x_intercept[vertical1] = w1[0]
-        y_intercept[vertical1] = m2[vertical1] * w1[0] + b2[vertical1]
-        x_intercept[vertical2] = p1[vertical2, 0]
-        y_intercept[vertical2] = m1 * p1[vertical2, 0] + b1
-    except Exception as e:
-        print(f"Error in handling vertical lines: {e}")
-    print(f"p1 shape: {w1.shape}, w2 shape: {p1.shape}, p1 shape: {p1.shape}, p2 shape: {p2.shape}")
-    print(f"vertical1: {vertical1}, vertical2: {vertical2}")
-
+    x_intercept = np.where(vertical1,   w1[:,0] , x_intercept)
+    y_intercept = np.where(vertical1, m2 * w1[:,0] + b2, y_intercept)
+    #print("after v1 case")
+    #print(f"{x_intercept.shape=}, {y_intercept.shape=}")
+    x_intercept = np.where(vertical2,  p1[:, 0],  x_intercept)
+    y_intercept = np.where(vertical2, m1_expanded * p1[:, 0] + b1_expanded, y_intercept)
+    #print("after v2 case")
+    #print(f"{x_intercept.shape=}, {y_intercept.shape=}")
+    #try:
+        #x_intercept[vertical1] = w1[0]
+        #y_intercept[vertical1] = m2[vertical1] * w1[0] + b2[vertical1]
+        #x_intercept[vertical2] = p1[vertical2, 0]
+        #y_intercept[vertical2] = m1 * p1[vertical2, 0] + b1
+    #except Exception as e:
+        #print(f"Error in handling vertical lines: {e}")
+    #print(f"p1 shape: {w1.shape}, w2 shape: {p1.shape}, p1 shape: {p1.shape}, p2 shape: {p2.shape}")
+    #print(f"vertical1: {vertical1}, vertical2: {vertical2}")
+    # Handle cases when the lines are parallel 
+    x_intercept = np.where(parallel,   np.inf , x_intercept)
+    y_intercept = np.where(parallel, np.inf, y_intercept)
+    #print("after parallel case")
+    #print(f"{x_intercept.shape=}, {y_intercept.shape=}")
+    #print(f"{x_intercept.shape=}, {y_intercept.shape=}")
     # Check if intersection points are within segment bounds
-    within_w1_w2 = (np.minimum(w1[0], w2[0]) <= x_intercept) & (x_intercept <= np.maximum(w1[0], w2[0])) & \
-                   (np.minimum(w1[1], w2[1]) <= y_intercept) & (y_intercept <= np.maximum(w1[1], w2[1]))
-    within_p1_p2 = (np.minimum(p1[:, 0], p2[:, 0]) <= x_intercept) & (x_intercept <= np.maximum(p1[:, 0], p2[:, 0])) & \
-                   (np.minimum(p1[:, 1], p2[:, 1]) <= y_intercept) & (y_intercept <= np.maximum(p1[:, 1], p2[:, 1]))
-    print(f"within_w1_w2 shape: {within_w1_w2.shape}")
-    print(f"within_p1_p2 shape: {within_p1_p2.shape}")
-    print(f"parallel: {parallel.shape}")
+    print(f" { w1[:,0].shape=}")
+    print(f" { w2[:,0].shape=}")
+    print(f" { p1[:,0].shape=}")
+    print(f" { p2[:,0].shape=}")
+    print(f" {np.minimum(w1[:,0], w2[:,0]).shape=}")
+    print(f" {np.minimum(p1[:, [0]], p2[:, [0]]).shape=}")
+    within_w1_w2 = (np.minimum(w1[:,0], w2[:,0]) <= x_intercept) & (x_intercept <= np.maximum(w1[:,0], w2[:,0])) & \
+                   (np.minimum(w1[:,1], w2[:,1]) <= y_intercept) & (y_intercept <= np.maximum(w1[:,1], w2[:,1]))
+    within_p1_p2 = (np.minimum(p1[:, [0]], p2[:, [0]]) <= x_intercept) & (x_intercept <= np.maximum(p1[:, [0]], p2[:, [0]])) & \
+                   (np.minimum(p1[:, [1]], p2[:, [1]]) <= y_intercept) & (y_intercept <= np.maximum(p1[:, [1]], p2[:, [1]]))
+    #print(f"within_w1_w2 shape: {within_w1_w2.shape}")
+    #print(f"within_p1_p2 shape: {within_p1_p2.shape}")
+    #print(f"parallel: {parallel.shape}")
     intersects = (~parallel) & within_w1_w2 & within_p1_p2
-    
+    #print(f"within_w1_w2 shape: {within_w1_w2.shape}, within_p1_p2 shape: {within_p1_p2.shape}")
     # Print final intersection results
-    print(f"Intersects shape: {intersects.shape}, Intersects: {intersects}")
+    #print(f"Intersects shape: {intersects.shape}, Intersects: {intersects}")
+    
+    return intersects
+def do_intersect_parallel_allinone( p1, p2, walls=constants.WALLS):
+    walls_array = np.array(walls)
+    # Convert inputs to numpy arrays for efficient calculations
+    w1, w2 = (walls_array[:,0]), np.array(walls_array[:,1])
+    #w1, w2 = np.array([w1]), np.array([w2])
+    p1, p2 = np.array(p1), np.array(p2)
+    
+    # Print shapes of the inputs for verification
+    #print(f"Shapes before calculation: w1={w1.shape}, w2={w2.shape}, p1={p1.shape}, p2={p2.shape}")
 
-    return intersects'''
+    # Calculate slopes and intercepts for all lines
+    #m1, b1 = calculate_slope_and_intercept_parallel(w1, w2)
+    m1, b1 = calculate_slope_and_intercept_walls(w1, w2)
+    #print (m1, b1)
+    m2, b2 = calculate_slope_and_intercept_parallel(p1, p2)
+
+    # Print slopes and intercepts to check their shapes and values
+    #print(f"m1: {m1}, b1: {b1}")
+    #print(f"m2: {m2}, b2: {b2}")
+    #print(f"Shapes after calculation: m1={np.shape(m1)}, b1={np.shape(b1)}, m2={np.shape(m2)}, b2={np.shape(b2)}")
+    m1_expanded = m1[np.newaxis, :]  # Shape becomes (1, m1)
+    b1_expanded = b1[np.newaxis, :]  # Shape becomes (1, b1)
+    # Check for parallel and vertical lines
+    parallel = np.isclose(m1, m2)
+    vertical1 = np.isnan(m1)[ np.newaxis, :] 
+    vertical2 = np.isnan(m2)
+    #print(f"Shapes of expanded vectors : m1_expanded={np.shape(m1_expanded)}, b1_expanded={np.shape(b1_expanded)}, m2={np.shape(m2)}, b2={np.shape(b2)}")
+
+    # Print information about line orientation
+    #print(f"Parallel: {parallel}, Vertical1: {vertical1}, Vertical2: {vertical2}")
+
+    # Prepare to calculate intersection points
+    x_intercept = np.zeros((p2.shape[0],p1.shape[0]))
+
+    y_intercept = np.zeros((p2.shape[0],p1.shape[0]))
+    #print("initialization")
+    #print(f"{x_intercept.shape=}, {y_intercept.shape=}")
+    #print(f"Shapes of interepts vectors : x_intercept={np.shape(x_intercept)}, y_intercept ={np.shape(x_intercept )}")
+    #print(f"Shapes of intercept after declarations: x_intercept={np.shape(x_intercept)}, y_intercept={np.shape(y_intercept)}")
+    # Calculate intersection for non-vertical lines
+    #not_vertical = ~vertical1 & ~vertical2 
+    not_vertical = np.logical_not(np.logical_or (vertical1 , vertical2  ))
+    #print(f"Shapes of boolean masks vectors : parallel={np.shape(parallel)}, vertical1 ={np.shape(vertical1 )}, vertical2={np.shape(vertical2)},non_vertical ={np.shape(not_vertical ) }")
+    #try:
+
+    x_intercept = np.where(not_vertical,   ( b2 - b1_expanded) / (m1_expanded - m2 ) , x_intercept)
+    y_intercept = np.where(not_vertical, m1_expanded * x_intercept, y_intercept)
+    #print("after default case")
+    #print(f"{x_intercept.shape=}, {y_intercept.shape=}")
+    #except Exception as e:
+        #print(f"Error in calculating non-vertical x intersection: {e}")
+    #try:
+
+    #except Exception as e:
+        #print(f"Error in calculating non-vertical y intersection: {e}")
+     #Print calculated intersection points
+    #print(f"x_intercept: {x_intercept}, y_intercept: {y_intercept}")
+
+    # Handle cases where one of the lines is vertical
+    x_intercept = np.where(vertical1,   w1[:,0] , x_intercept)
+    y_intercept = np.where(vertical1, m2 * w1[:,0] + b2, y_intercept)
+    #print("after v1 case")
+    #print(f"{x_intercept.shape=}, {y_intercept.shape=}")
+    x_intercept = np.where(vertical2,  p1[:, 0],  x_intercept)
+    y_intercept = np.where(vertical2, m1_expanded * p1[:, 0] + b1_expanded, y_intercept)
+    #print("after v2 case")
+    #print(f"{x_intercept.shape=}, {y_intercept.shape=}")
+    #try:
+        #x_intercept[vertical1] = w1[0]
+        #y_intercept[vertical1] = m2[vertical1] * w1[0] + b2[vertical1]
+        #x_intercept[vertical2] = p1[vertical2, 0]
+        #y_intercept[vertical2] = m1 * p1[vertical2, 0] + b1
+    #except Exception as e:
+        #print(f"Error in handling vertical lines: {e}")
+    #print(f"p1 shape: {w1.shape}, w2 shape: {p1.shape}, p1 shape: {p1.shape}, p2 shape: {p2.shape}")
+    #print(f"vertical1: {vertical1}, vertical2: {vertical2}")
+    # Handle cases when the lines are parallel 
+    x_intercept = np.where(parallel,   np.inf , x_intercept)
+    y_intercept = np.where(parallel, np.inf, y_intercept)
+    #print("after parallel case")
+    #print(f"{x_intercept.shape=}, {y_intercept.shape=}")
+    #print(f"{x_intercept.shape=}, {y_intercept.shape=}")
+    # Check if intersection points are within segment bounds
+    '''print(f" { w1[:,[0]].shape=}")
+    print(f" { w2[:,[0]].shape=}")
+    print(f" { p1[:,[0]].shape=}")
+    print(f" { p2[:,[0]].shape=}")
+    print(f" {np.minimum(w1[:, [0]], w2[:, [0]]).shape=}")
+    print(f" {np.minimum(p1[:, [0]], p2[:, [0]]).shape=}")'''
+    within_w1_w2 = (np.minimum(w1[:,[0]], w2[:,[0]]) <= x_intercept) & (x_intercept <= np.maximum(w1[:,[0]], w2[:,[0]])) & \
+                   (np.minimum(w1[:,[1]], w2[:,[1]]) <= y_intercept) & (y_intercept <= np.maximum(w1[:,[1]], w2[:,[1]]))
+    within_p1_p2 = (np.minimum(p1[:, [0]].T, p2[:, [0]]) <= x_intercept) & (x_intercept <= np.maximum(p1[:, [0]].T, p2[:, [0]])) & \
+                   (np.minimum(p1[:, [1]].T, p2[:, [1]]) <= y_intercept) & (y_intercept <= np.maximum(p1[:, [1]].T, p2[:, [1]]))
+    within_p1_p2_easy = (p1[:, [1]].T * p2[:, [1]]) < 0
+    #print(f"within_w1_w2 shape: {within_w1_w2.shape}")
+    #print(f"within_p1_p2 shape: {within_p1_p2.shape}")
+    #print(f"parallel: {parallel.shape}")
+    intersects = (~parallel) & within_w1_w2 & within_p1_p2
+    #print(f"within_w1_w2 shape: {within_w1_w2.shape}, within_p1_p2 shape: {within_p1_p2.shape}")
+    #intersects = np.any(intersects, axis=0)
+    #print(f"Intersects shape: {intersects.shape}, Intersects: {intersects}")
+    
+    return intersects
 
 '''def check_within_bounds(x_intercept, y_intercept, wall_start, wall_end, pedestrian_start, pedestrian_end):
     # Expand the start and end points for walls and pedestrian paths for broadcasting
@@ -616,10 +773,10 @@ def do_intersect_parallel(w1, w2, p1, p2):
     p1_x_grid, p2_x_grid = np.meshgrid(p1[:, 0], p2[:, 0], indexing='ij')
     p1_y_grid, p2_y_grid = np.meshgrid(p1[:, 1], p2[:, 1], indexing='ij')
     
-    '''# Slopes and intercepts for paths defined by all combinations of p1 and p2
-    mp = (p2_y_grid - p1_y_grid) / (p2_x_grid - p1_x_grid)  #warning: division by 0 or nan
-    bp = p1_y_grid - mp * p1_x_grid
-    print(f"Shapes after unneessary calculation: mw={np.shape(mw)}, bw={np.shape(bw)}, mp={np.shape(mp)}, bp={np.shape(bp)}") '''
+    # Slopes and intercepts for paths defined by all combinations of p1 and p2
+    #mp = (p2_y_grid - p1_y_grid) / (p2_x_grid - p1_x_grid)  #warning: division by 0 or nan
+    #bp = p1_y_grid - mp * p1_x_grid
+    #print(f"Shapes after unneessary calculation: mw={np.shape(mw)}, bw={np.shape(bw)}, mp={np.shape(mp)}, bp={np.shape(bp)}")
     # Intersection calculations
     x_intercept = (bp.T - bw_expanded) / (mw_expanded - mp.T) #ADDED .T because i had to
     y_intercept = mw_expanded * x_intercept + bw_expanded
@@ -649,7 +806,7 @@ def do_intersect_parallel(w1, w2, p1, p2):
     
     return intersects_any_wall
 
-def check_if_same_room(a, b, walls=constants.WALLS):
+'''def check_if_same_room(a, b, walls=constants.WALLS):
     m, n = len(a), len(b)
     # Initialize the mask with True values
     mask = np.ones((m, n), dtype=bool)  
@@ -662,7 +819,7 @@ def check_if_same_room(a, b, walls=constants.WALLS):
                 if do_intersect(segment_start, segment_end, wall[0], wall[1]):
                             mask[i, j] = False
                 break  # No need to check other walls if one intersection is found            
-    return mask  
+    return mask  '''
 
 
 
@@ -686,25 +843,25 @@ def check_if_there_is_a_direct_path(a, b, walls=constants.WALLS):
 
     # Iterate over each wall for intersection checks
     '''for wall in walls:
-        print(f" wall in walls type:= {type(wall)}") 
+        #print(f" wall in walls type:= {type(wall)}") 
         wall_start, wall_end = np.array(wall[0]), np.array(wall[1])
-        print(f" first walls start:= {wall_start}")
-        print(f"first walls start/end shape:= {wall_start.shape}")
-        print(f"first walls start/end type:= {type(wall_start)}")
+        #print(f" first walls start:= {wall_start}")
+        #print(f"first walls start/end shape:= {wall_start.shape}")
+        #print(f"first walls start/end type:= {type(wall_start)}")
         #print(f"Checking wall start: {wall_start}, wall end: {wall_end}")  # Debug print
 
         # Use broadcasting to compare all segments against the current wall
         intersects = do_intersect_parallel(wall_start, wall_end, a, b)
         #print(f"intersects shape: {intersects.shape}")
-        intersects_squeezed = np.squeeze(intersects)
+        intersects_squeezed = np.atleast_1d(np.squeeze(intersects))
         #print(f"intersects_squeezed shape: {intersects_squeezed.shape}")
         # Update mask based on intersections - if any intersection is found, set to False
         mask &= ~intersects_squeezed  # This uses logical AND to retain False where intersections occur'''
     #print(f" walls shape:= {walls_array.shape}")
     wall_start, wall_end = (walls_array[:,0]).squeeze(), np.array(walls_array[:,1]).squeeze()
-    '''print(f" second walls start:= {wall_start}")
-    print(f" second walls start/end shape:= {wall_start.shape}")
-    print(f" second walls start/end type:= {type(wall_start)}")'''
+    #print(f" second walls start:= {wall_start}")
+    #print(f" second walls start/end shape:= {wall_start.shape}")
+    #print(f" second walls start/end type:= {type(wall_start)}")
         #print(f"Checking wall start: {wall_start}, wall end: {wall_end}")  # Debug print
 
         # Use broadcasting to compare all segments against the current wall
@@ -725,6 +882,9 @@ def check_if_there_is_a_direct_path(a, b, walls=constants.WALLS):
 def calculate_detour(agent_pos, pedestrian_pos,  walls=constants.WALLS):
     # Calculate distances for detours via wall[0] and wall[1]
     wall= np.array(walls)
+    '''print(f"{wall = }")
+    print(f"{wall[:,0] = }")
+    print(f"{wall[:,1] = }")'''
     #print(f"Shapes before calculation in calculate_detous: agent pos={agent_pos.shape}, pedestrian possitions ={pedestrian_pos.shape}, wall = {wall.shape}, wall0 = {wall[0].shape}")    
     '''detour_via_wall0 = np.linalg.norm(agent_pos - wall[0]) + np.linalg.norm(wall[0] - pedestrian_pos)
     detour_via_wall1 = np.linalg.norm(agent_pos - wall[1]) + np.linalg.norm(wall[1] - pedestrian_pos)'''
@@ -733,21 +893,23 @@ def calculate_detour(agent_pos, pedestrian_pos,  walls=constants.WALLS):
     detour_via_wall1 = np.linalg.norm( - agent_pos + wall[:,1], axis=-1) + np.linalg.norm( - wall[:,1] + pedestrian_pos, axis=-1)
     #print(f"Shapes of detour_via_wall0: agent pos={detour_via_wall0.shape}")
     # Choose the shortest path
-    condition_array = ( detour_via_wall0 < detour_via_wall1)
+    wall0_is_closer_array = ( detour_via_wall0 < detour_via_wall1)
     '''if detour_via_wall0 < detour_via_wall1:
         chosen_wall_corner = wall[0]
         detour_distance = detour_via_wall0
     else:
         chosen_wall_corner = wall[1]
         detour_distance = detour_via_wall1'''
-    chosen_wall_corner = np.where(condition_array[:, np.newaxis], wall[:,0], wall[:,1])
-    detour_distance = np.where(condition_array, detour_via_wall0, detour_via_wall1)
+    #chosen_wall_corner = np.where(wall0_is_closer_array[:, np.newaxis], wall[:,0], wall[:,1]) #
+    chosen_wall_corner = np.where(wall0_is_closer_array[: , np.newaxis], wall[:,0], wall[:,1]) #
+    detour_distance = np.where(wall0_is_closer_array, detour_via_wall0, detour_via_wall1)
     #print(f" Shape of chosen wall corner:= {chosen_wall_corner.shape}")
     # Construct the detour vector
     # First, find the direction vector from agent to the chosen corner and normalize it
     direction_to_corner = chosen_wall_corner - agent_pos
+    #print((np.linalg.norm(direction_to_corner, axis=1)).size)
     #print(f" Shape of diretion to corner:= {direction_to_corner.shape}")
-    direction_to_corner_normalized = direction_to_corner / np.linalg.norm(direction_to_corner)
+    direction_to_corner_normalized = direction_to_corner / np.linalg.norm(direction_to_corner, axis=1)[:, np.newaxis]
     #print(f" Shape of direction_to_corner_normalized:= {direction_to_corner_normalized.shape}")
     #print(f" Shape of detour_distance:= {detour_distance.shape}")
     # Then, create the detour vector with the correct magnitude (total detour distance)
@@ -835,9 +997,9 @@ class Area:
         dm = distance_matrix(pedestrians.positions[fv],
                              pedestrians.positions[efv], 2)
         #sr = check_if_same_room(pedestrians.positions[fv],pedestrians.positions[efv]) 
-        sr = check_if_there_is_a_direct_path(pedestrians.positions[fv],pedestrians.positions[efv]) 
+        sr = do_intersect_parallel_allinone(pedestrians.positions[fv],pedestrians.positions[efv]).T 
         intersection = np.where(dm < SwitchDistances.to_pedestrian, 1, 0) 
-        intersection = np.logical_and(intersection, sr)
+        intersection = np.logical_and(intersection, ~sr)
 
 
         #n_intersections = np.maximum(1, intersection.sum(axis=1))
@@ -927,7 +1089,7 @@ class Area:
         if any(to_bump1_mask):
             pedestrians.positions[to_bump1_mask] = old_pos[to_bump1_mask]
             pedestrians.directions[to_bump1_mask, 1] = -pedestrians.directions[to_bump1_mask, 1]
-        # vertical wall bumping HERE€
+        # vertical wall bumping HERE€_sta
         v_opening_positions = [ 0.5]
         num_v_openings=len(v_opening_positions)
         #to_bump0_mask = np.logical_and(pedestrians.positions[:, 0] * old_pos[:, 0] < 0, old_pos[:, 1] > 0)
@@ -983,7 +1145,7 @@ class Area:
             return agent, False, 0.
         else:
             return agent, self.reward.is_termination_agent_wall_collision, -5.'''
-    def agent_step(self, action : list, agent : Agent) -> Tuple[Agent, bool, float]:
+    def agent_step(self, action : list, agent : Agent, my_obs1, my_obs2) -> Tuple[Agent, bool, float]:
         """
         Perform agent step:
             1. Read & preprocess action
@@ -1004,9 +1166,12 @@ class Area:
         #m_action = np.array(m_action)
         #m_action /= np.linalg.norm(m_action) + constants.EPS # np.clip(action, -1, 1, out=action)
         action = np.array(action)
+        #print(my_obs2.size)
         #action /= (np.linalg.norm(action) + constants.EPS) # np.clip(action, -1, 1, out=action)
         #agent.direction = self.step_size * m_action #
         agent.direction = self.step_size * action /(np.linalg.norm(action) + constants.EPS)
+        agent.observation_grad_ped = my_obs1
+        agent.observation_grad_ex = my_obs2
         h_opening_positions = [-1, 1]
         num_h_openings=len(h_opening_positions)
         v_opening_positions = [ 0.5]
@@ -1468,9 +1633,10 @@ class EvacuationEnv(gym.Env):
     def step(self, action: list):
         # Increment time
         truncated = self.time.step()
-
+        my_obs_grad_ped = self._get_observation()['grad_potential_pedestrians']
+        my_obs_grad_ex = self._get_observation()['grad_potential_exit']
         # Agent step
-        self.agent, terminated_agent, reward_agent = self.area.agent_step(action, self.agent)
+        self.agent, terminated_agent, reward_agent = self.area.agent_step(action, self.agent, my_obs_grad_ped, my_obs_grad_ex)
         
         # Pedestrians step
         self.pedestrians, terminated_pedestrians, reward_pedestrians, intrinsic_reward = \
@@ -1566,7 +1732,9 @@ class EvacuationEnv(gym.Env):
         log.info(f"Env is rendered and pnd image is saved to {filename}")
 
     def save_animation(self):
-        
+        #my_obs = self._get_observation()
+        '''print("my observation is ")
+        print(my_obs)'''
         fig, ax = plt.subplots(figsize=(5, 5))
 
         plt.title(f"{self.experiment_name}\nn_episodes = {self.time.n_episodes}")
@@ -1580,6 +1748,7 @@ class EvacuationEnv(gym.Env):
 
         exit_coordinates = (self.area.exit.position[0], self.area.exit.position[1])
         agent_coordinates = (self.agent.memory['position'][0][0], self.agent.memory['position'][0][1])
+        my_obs_grad_ped = (self.agent.memory['observation_grad_ped'][0])
         #plot Middle Wall
         plt.hlines([0], -1 + constants.WALL_HOLE_HALF_WIDTH, 1 - constants.WALL_HOLE_HALF_WIDTH, linestyle='--', color='grey')
         # Draw exiting zone
@@ -1625,10 +1794,25 @@ class EvacuationEnv(gym.Env):
 
         # Draw agent
         agent_position_plot = ax.plot(agent_coordinates[0], agent_coordinates[1], marker='+', color='red')[0]
-
+        # Draw observations
+        
+        x_values = [agent_coordinates[0], agent_coordinates[0] + 0.3*np.arctan(my_obs_grad_ped[0])]
+        y_values = [agent_coordinates[1], agent_coordinates[1] + 0.3*np.arctan(my_obs_grad_ped[1])]
+        observation_plot = ax.plot(x_values, y_values, 'b', linestyle="-")[0]
+        #my_arrow_x = 0.3*np.arctan(my_obs_grad_ped[0])
+        #my_arrow_y = 0.3*np.arctan(my_obs_grad_ped[1])
+        #observation_plot = ax.quiver(agent_coordinates[0],agent_coordinates[1],my_arrow_x, my_arrow_y) quiver isn't so easily updated
         def update(i):
-
+            my_obs_grad_ped = (self.agent.memory['observation_grad_ped'][i])
+            #my_obs_grad_ex = (self.agent.memory['observation_grad_ex'][i][0], self.agent.memory['observation_grad_ex'][i][1])
+            #print("my exit observation is ")
+            #print(my_obs_grad_ped.size) 
             agent_coordinates = (self.agent.memory['position'][i][0], self.agent.memory['position'][i][1])
+            x_values = [agent_coordinates[0], agent_coordinates[0] + 0.3*np.arctan(my_obs_grad_ped[0])]
+            y_values = [agent_coordinates[1], agent_coordinates[1] + 0.3*np.arctan(my_obs_grad_ped[1])]
+            #my_arrow_x = 0.3*np.arctan(my_obs_grad_ped[0])
+            #my_arrow_y = 0.3*np.arctan(my_obs_grad_ped[1])
+
             following_zone_plots.set_center(agent_coordinates)
 
             for status in Status.all():
@@ -1639,6 +1823,8 @@ class EvacuationEnv(gym.Env):
             # agent_position_plot.set_xdata(agent_coordinates[0])
             # agent_position_plot.set_ydata(agent_coordinates[1])
             agent_position_plot.set_data(agent_coordinates)
+            observation_plot.set_data(x_values, y_values)
+            #observation_plot.set_data(my_arrow_x, my_arrow_y)
 
         ani = animation.FuncAnimation(fig=fig, func=update, frames=self.time.now, interval=20)
         
