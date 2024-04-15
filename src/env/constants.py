@@ -2,7 +2,7 @@
 # Note: params with (!) in comment are only default params, which
 # can be changed with argparse module in main.py
 
-NUM_PEDESTRIANS = 50                       # ! number of pedestrians
+NUM_PEDESTRIANS = 1                       # ! number of pedestrians
 EPS = 1e-8 
 ENSLAVING_DEGREE = 0.8                      # ! leader's enslaving degree
 

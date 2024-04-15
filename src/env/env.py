@@ -1796,8 +1796,9 @@ class EvacuationEnv(gym.Env):
         agent_position_plot = ax.plot(agent_coordinates[0], agent_coordinates[1], marker='+', color='red')[0]
         # Draw observations
         
-        x_values = [agent_coordinates[0], agent_coordinates[0] + 0.3*np.arctan(my_obs_grad_ped[0])]
-        y_values = [agent_coordinates[1], agent_coordinates[1] + 0.3*np.arctan(my_obs_grad_ped[1])]
+        norm_values= np.linalg.norm(my_obs_grad_ped)
+        x_values = [agent_coordinates[0], agent_coordinates[0] + 0.3*(my_obs_grad_ped[0])*np.arctan(norm_values)/(norm_values+1e-08)]
+        y_values = [agent_coordinates[1], agent_coordinates[1] + 0.3*(my_obs_grad_ped[1])*np.arctan(norm_values)/(norm_values+1e-08)]
         observation_plot = ax.plot(x_values, y_values, 'b', linestyle="-")[0]
         #my_arrow_x = 0.3*np.arctan(my_obs_grad_ped[0])
         #my_arrow_y = 0.3*np.arctan(my_obs_grad_ped[1])
@@ -1808,8 +1809,8 @@ class EvacuationEnv(gym.Env):
             #print("my exit observation is ")
             #print(my_obs_grad_ped.size) 
             agent_coordinates = (self.agent.memory['position'][i][0], self.agent.memory['position'][i][1])
-            x_values = [agent_coordinates[0], agent_coordinates[0] + 0.3*np.arctan(my_obs_grad_ped[0])]
-            y_values = [agent_coordinates[1], agent_coordinates[1] + 0.3*np.arctan(my_obs_grad_ped[1])]
+            x_values = [agent_coordinates[0], agent_coordinates[0] + 0.3*(my_obs_grad_ped[0])*np.arctan(norm_values)/(norm_values+1e-08)]
+            y_values = [agent_coordinates[1], agent_coordinates[1] + 0.3*(my_obs_grad_ped[1])*np.arctan(norm_values)/(norm_values+1e-08)]
             #my_arrow_x = 0.3*np.arctan(my_obs_grad_ped[0])
             #my_arrow_y = 0.3*np.arctan(my_obs_grad_ped[1])
 
