@@ -152,8 +152,14 @@ def update_statuses(statuses, pedestrian_positions, agent_position, exit_positio
     #print(f"{do_intersect_parallel_allinone( agent_position_array,pedestrian_positions).shape=}")
     #print(f"{np.any(do_intersect_parallel_allinone( agent_position_array,pedestrian_positions), axis=1)=}")
     #print(f"{is_distance_low(pedestrian_positions, agent_position, SwitchDistances.to_leader).shape=}")
+    '''following = np.logical_and(is_distance_low(
+        pedestrian_positions, agent_position, SwitchDistances.to_leader) , ~np.any(do_intersect_parallel_allinone( agent_position_array,pedestrian_positions), axis=1))'''
+    sr1 = ~np.any(do_intersect_parallel_allinone( agent_position_array,pedestrian_positions), axis=1)
+    sr2 = ~np.any(do_intersect_parallel_allinone( agent_position_array,pedestrian_positions, constants.WALL2), axis=1)
+    sr3 = ~np.any(do_intersect_parallel_allinone( agent_position_array,pedestrian_positions, constants.WALL3), axis=1)
+    sr= np.logical_and(sr3, np.logical_and(sr1, sr2))
     following = np.logical_and(is_distance_low(
-        pedestrian_positions, agent_position, SwitchDistances.to_leader) , ~np.any(do_intersect_parallel_allinone( agent_position_array,pedestrian_positions), axis=1))
+        pedestrian_positions, agent_position, SwitchDistances.to_leader) , sr)
     
     #print(f"{np.any(do_intersect_parallel_allinone( agent_position_array,pedestrian_positions)).size=}")
     #print(f"{following.shape=}")
@@ -241,19 +247,19 @@ class Agent:
         self.start_direction = np.zeros(2, dtype=np.float32)
         self.enslaving_degree = enslaving_degree
         self.start_observation_grad_ped = np.zeros(2, dtype=np.float32)
-        self.start_observation_grad_ex = np.zeros(2, dtype=np.float32)
+        self.start_observation_grad_exi = np.zeros(2, dtype=np.float32)
     def reset(self):
         #self.position = self.start_position.copy()
         self.position = np.random.uniform(-1, 1, size=(2,))
         self.observation_grad_ped = self.start_observation_grad_ped.copy()
-        self.observation_grad_ex = self.start_observation_grad_ex.copy()
+        self.observation_grad_exi = self.start_observation_grad_exi.copy()
         self.direction = np.zeros(2, dtype=np.float32)
-        self.memory = {'position' : [], 'observation_grad_ped' : [], 'observation_grad_ex' : []}
+        self.memory = {'position' : [], 'observation_grad_ped' : [], 'observation_grad_exi' : []}
 
     def save(self):
         self.memory['position'].append(self.position.copy())
         self.memory['observation_grad_ped'].append(self.observation_grad_ped.copy())
-        self.memory['observation_grad_ex'].append(self.observation_grad_ex.copy())
+        self.memory['observation_grad_exi'].append(self.observation_grad_exi.copy())
 
 
 class Exit:
@@ -290,9 +296,12 @@ def grad_potential_pedestrians(
         agent: Agent, pedestrians: Pedestrians, alpha: float = constants.ALPHA
     ) -> np.ndarray:
     #print(f"Shapes before calculation in grad_potential pedestrians: agent position={agent.position.shape}, pedestrians positions ={pedestrians.positions.shape}")
-    condition_array = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , pedestrians.positions)
+    condition_array1 = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , pedestrians.positions,  [((-0.5 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER -0.02, 0), (0.5 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER +0.02, 0))])
+    condition_array2 = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , pedestrians.positions,  [((-1 , 0), (- 0.5 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER +0.02, 0))])
+    condition_array3 = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , pedestrians.positions,  [( (0.5 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER -0.02, 0), (1 , 0))])
+    condition_array = np.logical_and(condition_array3, np.logical_and(condition_array1, condition_array2)  )
     #R = np.where(condition_array[:, np.newaxis],- agent.position[np.newaxis, :] + pedestrians.positions, calculate_detour(agent.position , pedestrians.positions))
-    R = np.where(condition_array,- agent.position[np.newaxis, :] + pedestrians.positions, calculate_detour(agent.position , pedestrians.positions))
+    R = np.where(condition_array,- agent.position[np.newaxis, :] + pedestrians.positions, calculate_detour(agent.position , pedestrians.positions, [((-0.5 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER -0.02, 0), (0.5 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER +0.02, 0))] ))
     #R = agent.position[np.newaxis, :] - pedestrians.positions
     R = R[pedestrians.statuses == Status.VISCEK]
 
@@ -302,6 +311,7 @@ def grad_potential_pedestrians(
         grad = grad.sum(axis = 0)
     else:
         grad = np.zeros(2)
+    #print("ped")
     #print(f"{grad=}, {grad.shape=}")
     return grad
 
@@ -309,28 +319,58 @@ def grad_potential_pedestrians(
 def grad_potential_exit(
         agent: Agent, pedestrians: Pedestrians, exit: Exit, alpha: float = constants.ALPHA
     ) -> np.ndarray:
-    condition_array = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , exit.position[np.newaxis, :])
+    condition_array1 = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , exit.position[np.newaxis, :],  [((-0.5 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER -0.02, 0), (0.5 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER +0.02, 0))])
+    condition_array2 = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , exit.position[np.newaxis, :],  [((-1 , 0), (- 0.5 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER +0.02, 0))])
+    condition_array3 = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , exit.position[np.newaxis, :],  [( (0.5 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER -0.02, 0), (1 , 0))])
+    condition_array = np.logical_and(condition_array3, np.logical_and(condition_array1, condition_array2)  )
     #print(f"ondition array type: {type(condition_array)}")
     #print(f"Shapes before calculation in grad_potential exit : agent position={agent.position.shape}, exit position ={exit.position[np.newaxis, :].shape}, condition_array:= {condition_array.shape}")
-    R = np.where(condition_array[:, np.newaxis], - agent.position[np.newaxis, :] + exit.position[np.newaxis, :], calculate_detour(agent.position , exit.position[np.newaxis, :]))
+    R = np.where(condition_array, - agent.position[np.newaxis, :]+ exit.position[np.newaxis, :], calculate_detour(agent.position , exit.position,  [((-0.5 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER -0.02, 0), (0.5 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER +0.02, 0))]))
     #R = agent.position[np.newaxis, :] - pedestrians.positions
     
-    norm = np.linalg.norm(R) + constants.EPS
-    grad = alpha / norm ** (alpha + 2) * R
+    #norm = np.linalg.norm(R) + constants.EPS
+    norm = np.linalg.norm(R)+ constants.EPS
+    grad =  alpha / norm ** (alpha + 2) * R
+    grad = grad.sum(axis = 0)
+    #print("exi before multipliation")
+    #print(f"{grad=}, {grad.shape=}")
     grad *= sum(pedestrians.statuses == Status.FOLLOWER)
+    #print("exi")
     #print(f"{grad=}, {grad.shape=}")
     return grad
+'''def grad_potential_exit(
+        agent: Agent, pedestrians: Pedestrians, exit: Exit, alpha: float = constants.ALPHA
+    ) -> np.ndarray:
+    condition_array = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , exit.position[np.newaxis, :], [((-1 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER, 0), (1 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER, 0))])
+    #print(f"ondition array type: {type(condition_array)}")
+    #print(f"Shapes before calculation in grad_potential exit : agent position={agent.position.shape}, exit position ={exit.position[np.newaxis, :].shape}, condition_array:= {condition_array.shape}")
+    R = np.where(condition_array, - agent.position[np.newaxis, :] + exit.position[np.newaxis, :], calculate_detour(agent.position , exit.position[np.newaxis, :], [((-1 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER, 0), (1 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER, 0))]))
+    #R = agent.position[np.newaxis, :] - pedestrians.positions
+    
+    R = R[pedestrians.statuses == Status.FOLLOWER]
 
+    if len(R) != 0:
+        norm = np.linalg.norm(R, axis = 1)[:, np.newaxis] + constants.EPS
+        grad =  alpha / norm ** (alpha + 2) * R
+        grad = grad.sum(axis = 0)
+    else:
+        grad = np.zeros(2)
+    #print("ped")
+    #print(f"{grad=}, {grad.shape=}")
+    return grad'''
 def grad_time_derivative_pedestrians(
         agent: Agent, pedestrians: Pedestrians, alpha: float = constants.ALPHA
     ) -> np.ndarray:
 
     #R = - agent.position[np.newaxis, :] + pedestrians.positions
-    condition_array = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , pedestrians.positions)
-    R = np.where(condition_array[:, np.newaxis], - agent.position[np.newaxis, :] + pedestrians.positions, calculate_detour(agent.position , pedestrians.positions))
+    condition_array1 = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , pedestrians.positions,  [((-0.5 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER -0.02, 0), (0.5 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER +0.02, 0))])
+    condition_array2 = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , pedestrians.positions,  [((-1 , 0), (- 0.5 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER +0.02, 0))])
+    condition_array3 = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , pedestrians.positions,  [( (0.5 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER -0.02, 0), (1 , 0))])
+    condition_array = np.logical_and(condition_array3, np.logical_and(condition_array1, condition_array2)  )
+    R = np.where(condition_array,- agent.position[np.newaxis, :] + pedestrians.positions, calculate_detour(agent.position , pedestrians.positions, [((-0.5 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER -0.02, 0), (0.5 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER +0.02, 0))] ))
     R = R[pedestrians.statuses == Status.VISCEK]
 
-    V = agent.direction[np.newaxis, :] - pedestrians.positions
+    V = agent.direction[np.newaxis, :] - pedestrians.directions
     V = V[pedestrians.statuses == Status.VISCEK]
 
     if len(R) != 0:
@@ -339,25 +379,33 @@ def grad_time_derivative_pedestrians(
         grad = grad.sum(axis=0)
     else:
         grad = np.zeros(2)
-        
+    
+    #print(grad)
     return grad
 def grad_time_derivative_exit(
         agent: Agent, pedestrians: Pedestrians, exit: Exit, alpha: float = constants.ALPHA
     ) -> np.ndarray:
 
     #R = agent.position - exit.position
-    condition_array = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , exit.position[np.newaxis, :])
+    condition_array1 = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , exit.position[np.newaxis, :],  [((-0.5 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER -0.02, 0), (0.5 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER +0.02, 0))])
+    condition_array2 = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , exit.position[np.newaxis, :],  [((-1 , 0), (- 0.5 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER +0.02, 0))])
+    condition_array3 = ~do_intersect_parallel_allinone(agent.position[np.newaxis, :] , exit.position[np.newaxis, :],  [( (0.5 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER -0.02, 0), (1 , 0))])
+    condition_array = np.logical_and(condition_array3, np.logical_and(condition_array1, condition_array2)  )
     #print(f"ondition array type: {type(condition_array)}")
     #print(f"Shapes before calculation in grad_potential exit : agent position={agent.position.shape}, exit position ={exit.position[np.newaxis, :].shape}, condition_array:= {condition_array.shape}")
-    R = np.where(condition_array[:, np.newaxis], - agent.position[np.newaxis, :] + exit.position[np.newaxis, :], calculate_detour(agent.position , exit.position[np.newaxis, :]))
+    R = np.where(condition_array, - agent.position[np.newaxis, :]+ exit.position[np.newaxis, :], calculate_detour(agent.position , exit.position,  [((-0.5 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER -0.02, 0), (0.5 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER +0.02, 0))]))
     V = agent.direction
     # Ensure R is reshaped to a 1-D array if it's not already
-    R = R.squeeze()
+    #print(R)
+    R = np.atleast_1d(R)
+    #print(R)
     N = sum(pedestrians.statuses == Status.FOLLOWER)
     #print("speed activated")
     if N != 0:
         norm = np.linalg.norm(R) + constants.EPS
-        grad = alpha / norm ** (alpha + 4) * (V * norm**2 - (alpha + 2) * np.dot(V, R) * R)
+        #grad = alpha / norm ** (alpha + 4) * (V * norm**2 - (alpha + 2) * np.dot(V, R) * R)
+        grad = alpha / norm ** (alpha + 4) * (V * norm**2 - (alpha + 2) * np.sum(V * R, axis=1, keepdims=True) * R)
+        grad = grad.sum(axis = 0)
         grad *= N
     else:
         grad = np.zeros(2)
@@ -997,7 +1045,10 @@ class Area:
         dm = distance_matrix(pedestrians.positions[fv],
                              pedestrians.positions[efv], 2)
         #sr = check_if_same_room(pedestrians.positions[fv],pedestrians.positions[efv]) 
-        sr = do_intersect_parallel_allinone(pedestrians.positions[fv],pedestrians.positions[efv]).T 
+        sr1 = do_intersect_parallel_allinone(pedestrians.positions[fv],pedestrians.positions[efv], constants.WALLS).T 
+        sr2 = do_intersect_parallel_allinone(pedestrians.positions[fv],pedestrians.positions[efv], constants.WALL2).T 
+        sr3 = do_intersect_parallel_allinone(pedestrians.positions[fv],pedestrians.positions[efv], constants.WALL3).T 
+        sr = np.logical_or(sr3, np.logical_or(sr1,sr2))
         intersection = np.where(dm < SwitchDistances.to_pedestrian, 1, 0) 
         intersection = np.logical_and(intersection, ~sr)
 
@@ -1072,7 +1123,7 @@ class Area:
         pedestrians.directions *= np.where(miss!=0, -1, 1)
         # horizhontal wall bumping HERE€
         # Define the positions of the two openings
-        opening_positions = [-1, 1]
+        opening_positions = [-0.5, 0.5]
         num_openings=len(opening_positions)
         #€to_bump_mask1 = pedestrians.positions[:, 1] * old_pos[:, 1] < 0
         # #to_bump_mask = np.logical_and(to_bump_mask, np.abs(pedestrians.positions[:,0]) > constants.WALL_HOLE_HALF_WIDTH)
@@ -1171,8 +1222,8 @@ class Area:
         #agent.direction = self.step_size * m_action #
         agent.direction = self.step_size * action /(np.linalg.norm(action) + constants.EPS)
         agent.observation_grad_ped = my_obs1
-        agent.observation_grad_ex = my_obs2
-        h_opening_positions = [-1, 1]
+        agent.observation_grad_exi = my_obs2
+        h_opening_positions = [-0.5, 0.5]
         num_h_openings=len(h_opening_positions)
         v_opening_positions = [ 0.5]
         num_v_openings=len(v_opening_positions)
@@ -1634,9 +1685,9 @@ class EvacuationEnv(gym.Env):
         # Increment time
         truncated = self.time.step()
         my_obs_grad_ped = self._get_observation()['grad_potential_pedestrians']
-        my_obs_grad_ex = self._get_observation()['grad_potential_exit']
+        my_obs_grad_exi = self._get_observation()['grad_potential_exit']
         # Agent step
-        self.agent, terminated_agent, reward_agent = self.area.agent_step(action, self.agent, my_obs_grad_ped, my_obs_grad_ex)
+        self.agent, terminated_agent, reward_agent = self.area.agent_step(action, self.agent, my_obs_grad_ped, my_obs_grad_exi)
         
         # Pedestrians step
         self.pedestrians, terminated_pedestrians, reward_pedestrians, intrinsic_reward = \
@@ -1749,8 +1800,12 @@ class EvacuationEnv(gym.Env):
         exit_coordinates = (self.area.exit.position[0], self.area.exit.position[1])
         agent_coordinates = (self.agent.memory['position'][0][0], self.agent.memory['position'][0][1])
         my_obs_grad_ped = (self.agent.memory['observation_grad_ped'][0])
+        my_obs_grad_exi = (self.agent.memory['observation_grad_exi'][0])
+        #print(f"{my_obs_grad_ped=} { my_obs_grad_exi=}")
         #plot Middle Wall
-        plt.hlines([0], -1 + constants.WALL_HOLE_HALF_WIDTH, 1 - constants.WALL_HOLE_HALF_WIDTH, linestyle='--', color='grey')
+        plt.hlines([0], -0.5 + constants.WALL_HOLE_HALF_WIDTH, 0.5 - constants.WALL_HOLE_HALF_WIDTH, linestyle='--', color='grey')
+        plt.hlines([0], -1 , -0.5 - constants.WALL_HOLE_HALF_WIDTH, linestyle='--', color='grey')
+        plt.hlines([0], 0.5 + constants.WALL_HOLE_HALF_WIDTH, 1 , linestyle='--', color='grey')
         # Draw exiting zone
         exiting_zone = mpatches.Wedge(
             exit_coordinates, 
@@ -1796,21 +1851,31 @@ class EvacuationEnv(gym.Env):
         agent_position_plot = ax.plot(agent_coordinates[0], agent_coordinates[1], marker='+', color='red')[0]
         # Draw observations
         
-        norm_values= np.linalg.norm(my_obs_grad_ped)
-        x_values = [agent_coordinates[0], agent_coordinates[0] + 0.3*(my_obs_grad_ped[0])*np.arctan(norm_values)/(norm_values+1e-08)]
-        y_values = [agent_coordinates[1], agent_coordinates[1] + 0.3*(my_obs_grad_ped[1])*np.arctan(norm_values)/(norm_values+1e-08)]
-        observation_plot = ax.plot(x_values, y_values, 'b', linestyle="-")[0]
+        norm_values_ped= np.linalg.norm(my_obs_grad_ped)
+        x_values_ped = [agent_coordinates[0], agent_coordinates[0] + 0.3*(my_obs_grad_ped[0])*np.arctan(norm_values_ped)/(norm_values_ped+1e-08)]
+        y_values_ped = [agent_coordinates[1], agent_coordinates[1] + 0.3*(my_obs_grad_ped[1])*np.arctan(norm_values_ped)/(norm_values_ped+1e-08)]
+        observation_plot_ped = ax.plot(x_values_ped, y_values_ped, 'b', linestyle="-")[0]
         #my_arrow_x = 0.3*np.arctan(my_obs_grad_ped[0])
         #my_arrow_y = 0.3*np.arctan(my_obs_grad_ped[1])
         #observation_plot = ax.quiver(agent_coordinates[0],agent_coordinates[1],my_arrow_x, my_arrow_y) quiver isn't so easily updated
+        norm_values_exi= np.linalg.norm(my_obs_grad_exi)
+        x_values_exi = [agent_coordinates[0], agent_coordinates[0] + 0.3*(my_obs_grad_exi[0])*np.arctan(norm_values_exi)/(norm_values_exi+1e-08)]
+        y_values_exi = [agent_coordinates[1], agent_coordinates[1] + 0.3*(my_obs_grad_exi[1])*np.arctan(norm_values_exi)/(norm_values_exi+1e-08)]
+        observation_plot_exi = ax.plot(x_values_exi, y_values_exi, 'g', linestyle="-")[0]
         def update(i):
             my_obs_grad_ped = (self.agent.memory['observation_grad_ped'][i])
-            #my_obs_grad_ex = (self.agent.memory['observation_grad_ex'][i][0], self.agent.memory['observation_grad_ex'][i][1])
+            
+            my_obs_grad_exi = (self.agent.memory['observation_grad_exi'][i])
+            #print(f"{my_obs_grad_ped=} { my_obs_grad_exi=}")
             #print("my exit observation is ")
             #print(my_obs_grad_ped.size) 
             agent_coordinates = (self.agent.memory['position'][i][0], self.agent.memory['position'][i][1])
-            x_values = [agent_coordinates[0], agent_coordinates[0] + 0.3*(my_obs_grad_ped[0])*np.arctan(norm_values)/(norm_values+1e-08)]
-            y_values = [agent_coordinates[1], agent_coordinates[1] + 0.3*(my_obs_grad_ped[1])*np.arctan(norm_values)/(norm_values+1e-08)]
+            norm_values_ped= np.linalg.norm(my_obs_grad_ped)
+            x_values_ped = [agent_coordinates[0], agent_coordinates[0] + 0.3*(my_obs_grad_ped[0])*np.arctan(norm_values_ped)/(norm_values_ped+1e-08)]
+            y_values_ped = [agent_coordinates[1], agent_coordinates[1] + 0.3*(my_obs_grad_ped[1])*np.arctan(norm_values_ped)/(norm_values_ped+1e-08)]
+            norm_values_exi= np.linalg.norm(my_obs_grad_exi)
+            x_values_exi = [agent_coordinates[0], agent_coordinates[0] + 0.3*(my_obs_grad_exi[0])*np.arctan(norm_values_exi)/(norm_values_exi+1e-08)]
+            y_values_exi = [agent_coordinates[1], agent_coordinates[1] + 0.3*(my_obs_grad_exi[1])*np.arctan(norm_values_exi)/(norm_values_exi+1e-08)]
             #my_arrow_x = 0.3*np.arctan(my_obs_grad_ped[0])
             #my_arrow_y = 0.3*np.arctan(my_obs_grad_ped[1])
 
@@ -1824,7 +1889,8 @@ class EvacuationEnv(gym.Env):
             # agent_position_plot.set_xdata(agent_coordinates[0])
             # agent_position_plot.set_ydata(agent_coordinates[1])
             agent_position_plot.set_data(agent_coordinates)
-            observation_plot.set_data(x_values, y_values)
+            observation_plot_ped.set_data(x_values_ped, y_values_ped)
+            observation_plot_exi.set_data(x_values_exi, y_values_exi)
             #observation_plot.set_data(my_arrow_x, my_arrow_y)
 
         ani = animation.FuncAnimation(fig=fig, func=update, frames=self.time.now, interval=20)

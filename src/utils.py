@@ -101,7 +101,9 @@ def parse_args(inline_mode=False, request=""):
     if args.enabled_gravity_embedding:
         assert not args.use_relative_positions, \
             "Relative positions wrapper can NOT be used while enabled gravity embedding"
-    
+    '''if args.enabled_gravity_and_speed_embedding:
+        assert not args.use_relative_positions, \
+            "Relative positions wrapper can NOT be used while enabled gravity embedding"''' 
     return args
 
 def get_experiment_name(args):
