@@ -1,1 +1,1 @@
-python main.py --learn-timesteps 6500 --draw
+python main.py --learn-timesteps 2000 --draw

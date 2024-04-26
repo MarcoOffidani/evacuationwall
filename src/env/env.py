@@ -242,7 +242,7 @@ class Agent:
     enslaving_degree: float                     # 0 < enslaving_degree <= 1
 
     def __init__(self, enslaving_degree):
-        #self.start_position = np.array([0, -0.65])
+        #self.start_position = np.array([0, -0.99])
         self.start_position = np.random.uniform(-1, 1, size=(2,))
         self.start_direction = np.zeros(2, dtype=np.float32)
         self.enslaving_degree = enslaving_degree

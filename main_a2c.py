@@ -14,7 +14,7 @@
 # #     action = agent.act(obs)
 # #     obs, reward, terminated, truncated, _ = env.step(action)
 # #     if reward != 0:
-# #         print('reward = ', reward)
+# #         print(' = ', reward)
 
 # # # env.save_animation()
 # # # env.render()
