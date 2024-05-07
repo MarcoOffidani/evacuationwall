@@ -27,4 +27,4 @@ SAVE_PATH_MODELS = 'saved_data/models'
 
 DEVICE = "cuda"
 
-WALK_DIAGRAM_LOGGING_FREQUENCY = 50   # frequency in episodes  (overall_timesteps: 2_000_000)
+WALK_DIAGRAM_LOGGING_FREQUENCY = 25   # frequency in episodes  (overall_timesteps: 2_000_000)

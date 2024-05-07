@@ -2,7 +2,7 @@
 # Note: params with (!) in comment are only default params, which
 # can be changed with argparse module in main.py
 
-NUM_PEDESTRIANS = 100                      # ! number of pedestrians
+NUM_PEDESTRIANS = 50                      # ! number of pedestrians
 EPS = 1e-8 
 ENSLAVING_DEGREE = 0.8                      # ! leader's enslaving degree
 
@@ -24,14 +24,14 @@ IS_NEW_FOLLOWERS_REWARD = True              # ! if enable reward for new followe
 INIT_REWARD_EACH_STEP = 0.                  # ! each step give this reward
 
 # Time params
-MAX_TIMESTEPS = int(4e3)                    # ! max timesteps before truncation
+MAX_TIMESTEPS = int(2e3)                    # ! max timesteps before truncation
 N_EPISODES = 0                              # ! number of episodes already done (for pretrained models)
 N_TIMESTEPS = 0                             # ! number of timesteps already done (for pretrained models)
 
 # Gravity embedding params
 ENABLED_GRAVITY_EMBEDDING = True            # ! if True use gravity embedding
 ENABLED_GRAVITY_AND_SPEED_EMBEDDING = True 
-ALPHA = 3                                   # ! parameter of gradient state
+ALPHA = 2                                   # ! parameter of gradient state
 
 SWITCH_DISTANCE_TO_LEADER = 0.1             # radius of catch by leader
 SWITCH_DISTANCE_TO_OTHER_PEDESTRIAN = 0.05   # SWITCH_DISTANCE_TO_LEADER
