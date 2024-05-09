@@ -2,7 +2,7 @@
 # Note: params with (!) in comment are only default params, which
 # can be changed with argparse module in main.py
 
-NUM_PEDESTRIANS = 50                      # ! number of pedestrians
+NUM_PEDESTRIANS = 1                      # ! number of pedestrians
 EPS = 1e-8 
 ENSLAVING_DEGREE = 0.8                      # ! leader's enslaving degree
 
@@ -10,7 +10,7 @@ ENSLAVING_DEGREE = 0.8                      # ! leader's enslaving degree
 WIDTH = 1.                                  # ! geometry of environment space: width
 HEIGHT = 1.                                 # ! geometry of environment space: height
 STEP_SIZE = 0.01                            # ! 0.1, 0.05, 0.01
-NOISE_COEF = 0.2                            # ! randomization in viscek model
+NOISE_COEF = 0.0001                            # ! randomization in viscek model 0.2
 
 # Observation params
 NUM_OBS_STACKS = 1                          # ! number of times to stack observation (via FrameStack wrapper)

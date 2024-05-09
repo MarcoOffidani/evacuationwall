@@ -242,8 +242,8 @@ class Agent:
     enslaving_degree: float                     # 0 < enslaving_degree <= 1
     
     def __init__(self, observation_space, enslaving_degree):
-        #self.start_position = np.array([0, -0.99])
-        self.start_position = np.random.uniform(-1, 1, size=(2,))
+        self.start_position = np.array([0, 0.01])
+        #self.start_position = np.random.uniform(-1, 1, size=(2,))
         self.start_direction = np.zeros(2, dtype=np.float32)
         self.enslaving_degree = enslaving_degree
         self.observation_space = observation_space
@@ -253,8 +253,9 @@ class Agent:
         #self.start_observation_grad_ped = np.zeros(2, dtype=np.float32)
         #self.start_observation_grad_exi = np.zeros(2, dtype=np.float32)
     def reset(self):
-        #self.position = self.start_position.copy()
-        self.position = np.random.uniform(-1, 1, size=(2,))
+        self.position = self.start_position.copy()
+        #self.position = np.random.uniform(-1, 1, size=(2,))
+        
         #self.observation_grad_ped = self.start_observation_grad_ped.copy()
         #self.observation_grad_exi = self.start_observation_grad_exi.copy()
        
@@ -268,8 +269,8 @@ class Agent:
         self.memory = {key: [] for key in keys}
 
         #self.memory['agent_position'] = self.position.copy() #€€€this could be a part of the key
-        print('this is class agent funtion reset')
-        print(self.memory.keys())
+        #print('this is class agent funtion reset')
+        #print(self.memory.keys())
     def save(self):
         #self.memory['agent_position'].append(self.position.copy())
         '''self.memory['observation_grad_ped'].append(self.observation_grad_ped.copy())
@@ -392,7 +393,7 @@ def grad_time_derivative_pedestrians(
     R = np.where(condition_array,- agent.position[np.newaxis, :] + pedestrians.positions, calculate_detour(agent.position , pedestrians.positions, [((-0.5 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER -0.02, 0), (0.5 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER +0.02, 0))] ))
     R = R[pedestrians.statuses == Status.VISCEK]
 
-    V = agent.direction[np.newaxis, :] - pedestrians.directions
+    V = - agent.direction[np.newaxis, :] + pedestrians.directions
     V = V[pedestrians.statuses == Status.VISCEK]
 
     if len(R) != 0:
@@ -416,7 +417,7 @@ def grad_time_derivative_exit(
     #print(f"ondition array type: {type(condition_array)}")
     #print(f"Shapes before calculation in grad_potential exit : agent position={agent.position.shape}, exit position ={exit.position[np.newaxis, :].shape}, condition_array:= {condition_array.shape}")
     R = np.where(condition_array, - agent.position[np.newaxis, :]+ exit.position[np.newaxis, :], calculate_detour(agent.position , exit.position,  [((-0.5 + constants.WALL_HOLE_HALF_WIDTH - constants.SWITCH_DISTANCE_TO_LEADER -0.02, 0), (0.5 - constants.WALL_HOLE_HALF_WIDTH + constants.SWITCH_DISTANCE_TO_LEADER +0.02, 0))]))
-    V = agent.direction
+    V = - agent.direction
     # Ensure R is reshaped to a 1-D array if it's not already
     #print(R)
     R = np.atleast_1d(R)
@@ -1239,6 +1240,7 @@ class Area:
         #m_action = np.array(m_action)
         #m_action /= np.linalg.norm(m_action) + constants.EPS # np.clip(action, -1, 1, out=action)
         action = np.array(action)
+        action = np.array([0.2,1])
         #print(my_obs2.size)
         #action /= (np.linalg.norm(action) + constants.EPS) # np.clip(action, -1, 1, out=action)
         #agent.direction = self.step_size * m_action #
@@ -1907,13 +1909,16 @@ class EvacuationEnv(gym.Env):
         norm_values_ped= np.linalg.norm(my_obs_grad_ped)
         x_values_ped = [agent_coordinates[0], agent_coordinates[0] + 0.3*(my_obs_grad_ped[0])*np.arctan(norm_values_ped)/(norm_values_ped+1e-08)]
         y_values_ped = [agent_coordinates[1], agent_coordinates[1] + 0.3*(my_obs_grad_ped[1])*np.arctan(norm_values_ped)/(norm_values_ped+1e-08)]
+        '''norm_values_exi= np.linalg.norm(my_obs_grad_exi)
+        x_values_exi = [agent_coordinates[0], agent_coordinates[0] + 0.3*(my_obs_grad_exi[0])*np.arctan(norm_values_exi)/(norm_values_exi+1e-08)]
+        y_values_exi = [agent_coordinates[1], agent_coordinates[1] + 0.3*(my_obs_grad_exi[1])*np.arctan(norm_values_exi)/(norm_values_exi+1e-08)]'''
         observation_plot_ped = ax.plot(x_values_ped, y_values_ped, 'b', linestyle="-")[0]
         if constants.ENABLED_GRAVITY_AND_SPEED_EMBEDDING:
             norm_values_ped_time= np.linalg.norm(my_obs_grad_ped_time)
             x_values_ped_time = [x_values_ped[1], x_values_ped[1] + 0.3*(my_obs_grad_ped_time[0])*np.arctan(norm_values_ped_time)/(norm_values_ped_time+1e-08)]
             y_values_ped_time = [y_values_ped[1], y_values_ped[1] + 0.3*(my_obs_grad_ped_time[1])*np.arctan(norm_values_ped_time)/(norm_values_ped_time+1e-08)]
             observation_plot_ped_time = ax.plot(x_values_ped_time, y_values_ped_time, 'c', linestyle="-")[0]
-            
+          
         #my_arrow_x = 0.3*np.arctan(my_obs_grad_ped[0])
         #my_arrow_y = 0.3*np.arctan(my_obs_grad_ped[1])
         #observation_plot = ax.quiver(agent_coordinates[0],agent_coordinates[1],my_arrow_x, my_arrow_y) quiver isn't so easily updated
@@ -1921,6 +1926,12 @@ class EvacuationEnv(gym.Env):
         x_values_exi = [agent_coordinates[0], agent_coordinates[0] + 0.3*(my_obs_grad_exi[0])*np.arctan(norm_values_exi)/(norm_values_exi+1e-08)]
         y_values_exi = [agent_coordinates[1], agent_coordinates[1] + 0.3*(my_obs_grad_exi[1])*np.arctan(norm_values_exi)/(norm_values_exi+1e-08)]
         observation_plot_exi = ax.plot(x_values_exi, y_values_exi, 'g', linestyle="-")[0]
+        if constants.ENABLED_GRAVITY_AND_SPEED_EMBEDDING:
+            #same shit for exit
+            norm_values_exi_time= np.linalg.norm(my_obs_grad_exi_time)
+            x_values_exi_time = [x_values_exi[1], x_values_exi[1] + 0.3*(my_obs_grad_exi_time[0])*np.arctan(norm_values_exi_time)/(norm_values_exi_time+1e-08)]
+            y_values_exi_time = [y_values_exi[1], y_values_exi[1] + 0.3*(my_obs_grad_exi_time[1])*np.arctan(norm_values_exi_time)/(norm_values_exi_time+1e-08)]
+            observation_plot_exi_time = ax.plot(x_values_exi_time, y_values_exi_time, 'k', linestyle="-")[0]  
         def update(i):
             my_obs_grad_ped = (self.agent.memory['grad_potential_pedestrians'][i])
             
@@ -1938,11 +1949,16 @@ class EvacuationEnv(gym.Env):
             y_values_exi = [agent_coordinates[1], agent_coordinates[1] + 0.3*(my_obs_grad_exi[1])*np.arctan(norm_values_exi)/(norm_values_exi+1e-08)]
             if constants.ENABLED_GRAVITY_AND_SPEED_EMBEDDING:
                 my_obs_grad_ped_time = (self.agent.memory['grad_time_derivative_pedestrians'][i])
+                norm_values_ped_time= np.linalg.norm(my_obs_grad_ped_time)
                 x_values_ped_time = [x_values_ped[1], x_values_ped[1] + 0.3*(my_obs_grad_ped_time[0])*np.arctan(norm_values_ped_time)/(norm_values_ped_time+1e-08)]
                 y_values_ped_time = [y_values_ped[1], y_values_ped[1] + 0.3*(my_obs_grad_ped_time[1])*np.arctan(norm_values_ped_time)/(norm_values_ped_time+1e-08)]
             #my_arrow_x = 0.3*np.arctan(my_obs_grad_ped[0])
             #my_arrow_y = 0.3*np.arctan(my_obs_grad_ped[1])
-
+                my_obs_grad_exi_time = (self.agent.memory['grad_time_derivative_exit'][i])
+                norm_values_exi_time= np.linalg.norm(my_obs_grad_exi_time)
+                x_values_exi_time = [x_values_exi[1], x_values_exi[1] + 0.3*(my_obs_grad_exi_time[0])*np.arctan(norm_values_exi_time)/(norm_values_exi_time+1e-08)]
+                y_values_exi_time = [y_values_exi[1], y_values_exi[1] + 0.3*(my_obs_grad_exi_time[1])*np.arctan(norm_values_exi_time)/(norm_values_exi_time+1e-08)]
+                #print(f"{my_obs_grad_ped_time=} { my_obs_grad_exi_time=}")
             following_zone_plots.set_center(agent_coordinates)
 
             for status in Status.all():
@@ -1957,6 +1973,7 @@ class EvacuationEnv(gym.Env):
             observation_plot_exi.set_data(x_values_exi, y_values_exi)
             if constants.ENABLED_GRAVITY_AND_SPEED_EMBEDDING:
                 observation_plot_ped_time.set_data(x_values_ped_time, y_values_ped_time)
+                observation_plot_exi_time.set_data(x_values_exi_time, y_values_exi_time)
 
             #observation_plot.set_data(my_arrow_x, my_arrow_y)
 

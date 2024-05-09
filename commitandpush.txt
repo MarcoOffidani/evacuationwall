@@ -1,6 +1,13 @@
 cd C:\Users\Asus\Documents\GitHub\evacuationwall
 git init
 git add *
-git commit -am "added check same room parallel for both agent to pedestrians and pedestrians to pedestrians"
+git commit -am "added time derivative oservation"
+
+git push -u https://github.com/MarcoOffidani/evacuationwall.git
+
+cd C:\Users\Asus\Documents\GitHub\evacuationwall
+git init
+git add *
+git commit -am "added time derivative oservation"
 
 git push --force -u https://github.com/MarcoOffidani/evacuationwall.git
