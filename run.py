@@ -2,23 +2,12 @@ import os
 import numpy as np
 from gymnasium.wrappers import FrameStack, FlattenObservation
 from stable_baselines3 import PPO
+import wandb
 
 from src.env import EvacuationEnv, RelativePosition, constants
 from src import params
 from src.utils import get_experiment_name, parse_args
 
-
-from src.env import EvacuationEnv, RelativePosition, constants
-from src import params
-from src.utils import get_experiment_name, parse_args
-
-
-
-#from agents import RandomAgent, RotatingAgent
-import numpy as np
-import os
-from stable_baselines3 import PPO
-print('starting the experiment')
 def setup_env(args, experiment_name):
     env = EvacuationEnv(
         experiment_name=experiment_name,
@@ -57,6 +46,8 @@ def setup_env(args, experiment_name):
         env = FlattenObservation(env)
 
     return env
+
+
 def setup_model(args, env): 
     
     if args.origin == 'ppo':
@@ -81,24 +72,31 @@ def setup_model(args, env):
         raise NotImplementedError
     return model
 
+def setup_wandb(args, experiment_name):
+    config_args = vars(args)
+    # config_env = {key : value for key, value in constants.__dict__.items() if key[0] != '_'}
+    # config_model = {key : value for key, value in params.__dict__.items() if key[0] != '_'}
+    # save_config = dict(config_args, **config_env, **config_model)
+    from src.env.env import SwitchDistances as sd
+    config_switch_distances = {k : vars(sd)[k] for k in sd.__annotations__.keys()}
+    save_config = dict(config_args, **config_switch_distances)
+
+    wandb.init(
+        project="evacuation",
+        name=args.exp_name,
+        notes=experiment_name,
+        config=save_config
+    )
+
 if __name__ == "__main__":
     args = parse_args()
+
     experiment_name = get_experiment_name(args)
+
+    setup_wandb(args, experiment_name)
     env = setup_env(args, experiment_name)
 
-
-
     model = setup_model(args, env)
-    model = model.load(os.path.join(params.SAVE_PATH_MODELS, f"test_n-100_lr-0.0003_gamma-0.99_s-gra_a-2_ss-0.01_vr-0.05_11-May-03-23-38.zip"))
-    obs, _ = env.reset()
-    for i in range(2000):
-        action = model.predict(obs)
-        print(action)
-        obs, reward, terminated, truncated, _ = env.step(action)
-        if reward != 0:
-            print(' = ', reward)
-
-    env.save_animation()
-    env.render()
-
-print('code completed succesfully')
+    #model.learn(args.learn_timesteps, tb_log_name=experiment_name)
+    model.load(os.path.join(params.SAVE_PATH_MODELS, f"test_n-100_lr-0.0003_gamma-0.99_s-gra_a-2_ss-0.01_vr-0.05_11-May-03-23-38.zip"))
+    model.save(os.path.join(params.SAVE_PATH_MODELS, f"{experiment_name}.zip"))

@@ -93,9 +93,13 @@ if __name__ == "__main__":
 
     experiment_name = get_experiment_name(args)
 
-    setup_wandb(args, experiment_name)
+    #setup_wandb(args, experiment_name)
     env = setup_env(args, experiment_name)
 
     model = setup_model(args, env)
-    model.learn(args.learn_timesteps, tb_log_name=experiment_name)
-    model.save(os.path.join(params.SAVE_PATH_MODELS, f"{experiment_name}.zip"))
+    #model.load('11may.zip') #remove .for training
+    #model.learning_rate = 0.0
+    model.learn(args.learn_timesteps, tb_log_name=experiment_name) 
+ 
+
+    #model.save(os.path.join(params.SAVE_PATH_MODELS, f"{experiment_name}.zip"))
